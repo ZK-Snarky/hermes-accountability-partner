@@ -1,0 +1,14 @@
+name: accountability-partner
+version: "0.1.0"
+description: "Holds you to what you said, in your own words: saves your promises, checks in each night, takes a one-tap answer, and keeps an honest score the agent can't fudge."
+author: ZK-Snarky
+requires_hermes: ">=0.22.5"
+provides_tools:
+  - promise_add
+  - promise_record
+  - promise_drop
+  - promise_list
+  - promise_checkin
+  - promise_report
+provides_hooks:
+  - pre_llm_call
