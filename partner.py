@@ -67,10 +67,25 @@ def drop(ledger: Ledger, args: dict, message: Optional[str]) -> dict:
     return {"ok": True, "dropped": p.label()}
 
 
+_NO_WORDS = re.compile(r"\b(didn't|didnt|did not|not|never|no|skip|skipped|missed|couldn't|couldnt|"
+                       r"won't|wont|failed)\b")
+
+
+def _negated(quote: str, message: str) -> bool:
+    """True when the quoted words, or the few words just before them, say no ("didn't go ...")."""
+    msg, q = _norm(message), _norm(quote)
+    at = msg.find(q)
+    return bool(_NO_WORDS.search(msg[max(0, at - 25): at + len(q)]))
+
+
 def record(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict:
     refused = _need_words(args.get("user_quote", ""), message)
     if refused:
         return refused
+    if any(item.get("kept") for item in args.get("results") or []) and _negated(args["user_quote"], message):
+        return {"ok": False, "error": (
+            "The quoted words say 'didn't'/'not'/'skipped', so they can't mark anything kept. "
+            "Ask the user plainly whether they did it.")}
     day = today
     if args.get("day") == "yesterday":
         day = today - timedelta(days=1)

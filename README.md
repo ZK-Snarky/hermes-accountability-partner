@@ -16,7 +16,9 @@ Hermes does what you ask. This plugin makes it hold you to what **you** said you
 ## Install
 
 ```bash
-hermes plugins install accountability-partner
+hermes plugins install accountability-partner     # once it's in the catalog
+# or straight from GitHub:
+hermes plugins install https://github.com/ZK-Snarky/hermes-accountability-partner
 hermes plugins enable accountability-partner
 ```
 
@@ -39,6 +41,12 @@ Dates follow the machine's local time. Set `TZ` for another time zone.
 | "Went to the gym today" | The agent records it, quoting you |
 | "Drop the stretching one" | Removed, with your quote on file |
 | `/promises` | Your promises and this week's score, no model call |
+
+A weekly goal's consequence is named in the Sunday receipt, when the week is actually missed, not
+on the night of a single skip. Daily, weekday and one-time promises name it on the night.
+
+To mark something kept, the quote must be in the user's message and can't be preceded or carried by
+a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted into a "done".
 
 ## Tools, hooks and commands
 

@@ -126,3 +126,26 @@ def test_weekly_day_miss_names_no_consequence(ledger):
          consequence="$20", user_quote="gym 3x a week")
     partner.checkin(ledger, MON)
     assert "$20" not in partner.answer_from_reply(ledger, "no", MON)
+
+
+def test_a_no_cant_be_quoted_into_a_yes(ledger):
+    p = _add(ledger, "gym 3x a week", what="Gym", cadence="weekly", per_week=3,
+             user_quote="gym 3x a week")
+    msg = "I didn't go to the gym today"
+    out = partner.record(ledger, {"results": [{"id": p["id"], "kept": True}],
+                                  "user_quote": "go to the gym"}, msg, MON)
+    assert out["ok"] is False and ledger.day_report(p["id"], MON) is None
+    out = partner.record(ledger, {"results": [{"id": p["id"], "kept": False}],
+                                  "user_quote": "didn't go to the gym"}, msg, MON)
+    assert out["ok"] and ledger.day_report(p["id"], MON) is False
+    assert partner.record(ledger, {"results": [{"id": p["id"], "kept": True}],
+                                   "user_quote": "went to the gym"}, "went to the gym today",
+                          MON)["ok"]
+
+
+def test_mixed_answer_still_records_the_yes(ledger):
+    p = _add(ledger, "40 calls every weekday", what="Calls", cadence="weekdays",
+             user_quote="40 calls every weekday")
+    msg = "did my 40 calls, but no gym today"
+    assert partner.record(ledger, {"results": [{"id": p["id"], "kept": True}],
+                                   "user_quote": "did my 40 calls"}, msg, MON)["ok"]
