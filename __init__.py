@@ -35,8 +35,8 @@ GUIDE = (
     "to...\", \"every day I...\"), offer to save it with promise_add, quoting their exact words. "
     "If one of the user's connected tools could show it happened (a run in a fitness app, commits "
     "on GitHub, a calendar event, a location visit), set proof to say where to look. "
-    "Only the user's own words add, drop or mark a promise; never mark one kept or missed from "
-    "your own reading of their day. The ledger's numbers are the score: repeat them, don't round up."
+    "Only the user's own words add, drop or mark a promise, or a real result from one of their "
+    "tools (promise_prove); never mark one kept or missed from your own reading of their day. The ledger's numbers are the score: repeat them, don't round up."
 )
 
 

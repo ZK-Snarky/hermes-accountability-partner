@@ -14,9 +14,9 @@ receipts instead of just taking your word for it.
   with whatever your Hermes can already reach.
 - **An honest score.** Streaks, "2 of 3 this week", and a Sunday receipt: *you said 12, you did 9*,
   plus any consequence you chose for a miss.
-- **No fudging, enforced in code.** Only your own words add, drop or mark a promise. Every tool that
-  changes the ledger needs a quote, and the plugin checks that the quote really is in your current
-  message. The agent can't invent a promise, can't mark you "done" on its own judgment, and can't
+- **No fudging, enforced in code.** Only your own words (or a real receipt) add, drop or mark a
+  promise. Every tool that changes the ledger needs a quote, and the plugin checks that the quote
+  really is in your current message. The agent can't invent a promise, can't mark you "done" on its own judgment, and can't
   round a miss up to a win, because every number comes from the ledger rather than the model.
   Receipts follow the same rule: the plugin watches tool results through Hermes's `post_tool_call`
   hook, and `promise_prove` is refused unless its evidence is text that tool really returned in this

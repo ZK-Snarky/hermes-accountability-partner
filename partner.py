@@ -1,8 +1,9 @@
 """What the tools, the hook and the /promises command do, without any Hermes imports.
 
-The one rule everything here follows: only the user's own words change the ledger. Adding,
-dropping and marking a promise all need a quote that appears in the user's current message,
-checked in code. The agent can phrase things, but it can't invent a promise or a "done".
+The one rule everything here follows: only the user's own words, or a real result from one of
+their tools, change the ledger. Adding, dropping and marking a promise need a quote that appears
+in the user's current message; a receipt needs text a tool really returned. Both are checked in
+code. The agent can phrase things, but it can't invent a promise or a "done".
 """
 
 from __future__ import annotations
