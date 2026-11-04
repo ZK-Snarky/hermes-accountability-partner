@@ -26,10 +26,15 @@ _lock = threading.Lock()
 _ledger: Optional[Ledger] = None
 _ledger_path: Optional[Path] = None
 _last_said: dict[str, tuple[str, float]] = {}  # session id -> (user's message, when)
+_seen: dict[str, list[tuple[str, str, float]]] = {}  # session id -> [(tool, result text, when)]
+_SEEN_PER_SESSION = 40
+_RESULT_CHARS = 20000
 
 GUIDE = (
     "Accountability Partner is on. When the user commits to something (\"I'll...\", \"I'm going "
     "to...\", \"every day I...\"), offer to save it with promise_add, quoting their exact words. "
+    "If one of the user's connected tools could show it happened (a run in a fitness app, commits "
+    "on GitHub, a calendar event, a location visit), set proof to say where to look. "
     "Only the user's own words add, drop or mark a promise; never mark one kept or missed from "
     "your own reading of their day. The ledger's numbers are the score: repeat them, don't round up."
 )
@@ -112,6 +117,25 @@ def on_pre_llm_call(session_id: str = "", user_message: Any = None,
     return {"context": line} if line else None
 
 
+def on_post_tool_call(tool_name: str = "", result: Any = None, session_id: str = "", **_: Any):
+    """Keep recent tool results so promise_prove can check a receipt really came from a tool."""
+    if not session_id or not tool_name or tool_name.startswith("promise_"):
+        return None
+    text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str)
+    rows = _seen.setdefault(session_id, [])
+    rows.append((tool_name, text[:_RESULT_CHARS], time.time()))
+    del rows[:-_SEEN_PER_SESSION]
+    if len(_seen) > 200:
+        oldest = min(_seen, key=lambda k: _seen[k][-1][2] if _seen[k] else 0)
+        _seen.pop(oldest, None)
+    return None
+
+
+def _results_this_session(session_id: Optional[str]) -> list[tuple[str, str]]:
+    cutoff = time.time() - 2 * _RECENT_SECONDS
+    return [(name, text) for name, text, at in _seen.get(session_id or "", []) if at > cutoff]
+
+
 # --- tools ----------------------------------------------------------------------------------
 
 def _add(args: dict, session_id: str = "", **_: Any) -> str:
@@ -126,12 +150,25 @@ def _record(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.record(ledger(), args, _users_words(session_id), today()))
 
 
+def _prove(args: dict, session_id: str = "", **_: Any) -> str:
+    return _json(partner.prove(ledger(), args, _results_this_session(session_id), today()))
+
+
 def _list(args: dict, **_: Any) -> str:
     return _json(partner.listing(ledger(), today()))
 
 
 def _checkin(args: dict, **_: Any) -> str:
-    return _json({"message": partner.checkin(ledger(), today())})
+    led, day = ledger(), today()
+    if not args.get("send_now"):
+        prove = partner.prove_first(led, day)
+        if prove:
+            return _json({"prove_first": prove, "next": (
+                "For each promise, use the user's connected tools to look for proof that it "
+                "happened today, as its proof field says. When a tool shows it, call promise_prove "
+                "quoting that tool's output. Skip any you can't check. Then call promise_checkin "
+                "again with send_now true.")})
+    return _json({"message": partner.checkin(led, day)})
 
 
 def _report(args: dict, **_: Any) -> str:
@@ -149,8 +186,18 @@ TOOLS = [
         "per_week": {"type": "integer", "description": "For weekly: times per week (1-7)."},
         "due": {"type": "string", "description": "For once: due date, YYYY-MM-DD."},
         "consequence": {"type": "string", "description": "Only if the user named one themselves."},
+        "proof": {"type": "string", "description": (
+            "Optional: where a connected tool can show it happened, e.g. 'Strava run today' or "
+            "'GitHub commits to acme/app today'.")},
         "user_quote": _QUOTE,
     }, ["what", "cadence", "user_quote"]),
+    ("promise_prove", _prove, (
+        "Mark a promise kept from a receipt: a result one of the user's connected tools returned "
+        "in this session. evidence must be copied exactly from that tool's output; it is checked."), {
+        "id": {"type": "integer"},
+        "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
+        "evidence": {"type": "string", "description": "Exact text from that tool's output that shows it happened."},
+    }, ["id", "source_tool", "evidence"]),
     ("promise_record", _record, (
         "Record the user's own word that they kept or missed promises today (or yesterday). "
         "Never use it on your own judgment."), {
@@ -164,8 +211,11 @@ TOOLS = [
     }, ["id", "user_quote"]),
     ("promise_list", _list, "List the user's promises with this week's score.", {}, []),
     ("promise_checkin", _checkin, (
-        "Build tonight's check-in question. Send its message to the user exactly as written; "
-        "if it is [SILENT], send nothing."), {}, []),
+        "Build tonight's check-in. It may first return prove_first: promises to look for receipts "
+        "on. Then call it with send_now true and send its message exactly as written; if it is "
+        "[SILENT], send nothing."), {
+        "send_now": {"type": "boolean", "description": "True once receipts have been looked for."},
+    }, []),
     ("promise_report", _report, (
         "Build the weekly 'you said, you did' receipt. Send its message exactly as written; "
         "if it is [SILENT], send nothing."), {}, []),
@@ -187,6 +237,7 @@ def register(ctx) -> None:
             schema={"name": name, "description": description, "parameters": {
                 "type": "object", "properties": props, "required": required}})
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
+    ctx.register_hook("post_tool_call", on_post_tool_call)
     ctx.register_command("promises", _promises_command,
                          description="Your promises and this week's score")
     ctx.register_system_prompt_section("accountability-partner", GUIDE)
@@ -194,8 +245,11 @@ def register(ctx) -> None:
         "nightly-checkin", title="Nightly check-in",
         description="Each night, ask about today's promises. Answer with one tap, like 'yes no'.",
         category="daily", schedule_template="{minute} {hour} * * *",
-        prompt_template=("Call promise_checkin. Send the user its message exactly as written, "
-                         "with nothing added. If the message is [SILENT], respond with [SILENT]."),
+        prompt_template=("Call promise_checkin and follow what it returns: if it lists prove_first, "
+                         "look for proof with the user's connected tools and call promise_prove for "
+                         "each one you find, then call promise_checkin with send_now true. Send the "
+                         "user its message exactly as written, with nothing added. If the message "
+                         "is [SILENT], respond with [SILENT]."),
         slots=[{"name": "time", "type": "time", "label": "What time?", "default": "21:00",
                 "help": "24h local time"},
                {"name": "deliver", "type": "enum", "label": "Where to deliver?",

@@ -46,13 +46,15 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
     try:
         p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
-                       consequence=args.get("consequence"),
+                       consequence=args.get("consequence"), proof=args.get("proof"),
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
     out = {"ok": True, "id": p.id, "saved": p.label(), "quote": p.quote}
     if p.consequence:
         out["consequence"] = p.consequence
+    if p.proof:
+        out["proof"] = p.proof
     return out
 
 
@@ -110,7 +112,8 @@ def record(ledger: Ledger, args: dict, message: Optional[str], today: date) -> d
 def listing(ledger: Ledger, today: date) -> dict:
     items = [{"id": p.id, "promise": p.label(), "said": p.quote,
               "this_week": line_for(ledger, p, today),
-              **({"consequence": p.consequence} if p.consequence else {})}
+              **({"consequence": p.consequence} if p.consequence else {}),
+              **({"proof": p.proof} if p.proof else {})}
              for p in ledger.active()]
     return {"ok": True, "promises": items} if items else {
         "ok": True, "promises": [], "note": "No promises yet. They start from the user's own words."}
@@ -134,18 +137,60 @@ def to_ask(ledger: Ledger, today: date) -> list[Promise]:
     return out
 
 
+def prove_first(ledger: Ledger, today: date) -> list[dict]:
+    """Tonight's promises that name a proof and have no answer yet: look for receipts first."""
+    return [{"id": p.id, "what": p.what, "proof": p.proof} for p in to_ask(ledger, today)
+            if p.proof and ledger.day_report(p.id, today) is None]
+
+
 def checkin(ledger: Ledger, today: date) -> str:
-    asks = [p for p in to_ask(ledger, today) if ledger.day_report(p.id, today) is None]
-    if not asks:
+    due = to_ask(ledger, today)
+    seen = [p for p in due if ledger.day_report(p.id, today) is True and ledger.receipt(p.id, today)]
+    asks = [p for p in due if ledger.day_report(p.id, today) is None]
+    if not asks and not seen:
         ledger.clear_pending()
         return SILENT
     lines = [f"Check-in for {today.strftime('%a %b')} {today.day}:"]
+    for p in seen:
+        lines.append(f"✓ {p.what}: seen in {_tool_label(ledger.receipt(p.id, today))} "
+                     f"({line_for(ledger, p, today)})")
+    if not asks:
+        ledger.clear_pending()
+        lines.append("Nothing to ask tonight. Everything is proven.")
+        return "\n".join(lines)
     for n, p in enumerate(asks, 1):
         lines.append(f"{n}. {_question(p)} ({line_for(ledger, p, today)})")
     example = " ".join(["yes", "no", "yes"][: len(asks)] + ["yes"] * max(0, len(asks) - 3))
     lines.append(f'Reply in order, like "{example}".' if len(asks) > 1 else 'Reply "yes" or "no".')
     ledger.set_pending(today, [p.id for p in asks])
     return "\n".join(lines)
+
+
+def _tool_label(name: str) -> str:
+    """mcp_github_list_commits -> github list commits"""
+    name = name[4:] if name.startswith("mcp_") else name
+    return name.replace("_", " ").replace("-", " ")
+
+
+def prove(ledger: Ledger, args: dict, tool_results: list, today: date) -> dict:
+    """Mark a promise kept from a receipt: ``evidence`` must be text that ``source_tool`` really
+    returned in this session (``tool_results`` = [(tool name, result text)], seen by the hook)."""
+    tool = (args.get("source_tool") or "").strip()
+    evidence = args.get("evidence") or ""
+    if tool.startswith("promise_"):
+        return {"ok": False, "error": "A promise tool can't be its own receipt."}
+    if len(_norm(evidence)) < 8:
+        return {"ok": False, "error": "evidence must quote at least a few words of the tool's output."}
+    if not any(name == tool and _norm(evidence) in _norm(text) for name, text in tool_results):
+        return {"ok": False, "error": (
+            f"No result from {tool or 'that tool'} in this session contains that evidence. Call the "
+            "tool, then quote its output exactly. If there's no proof, ask the user instead.")}
+    try:
+        p = ledger.get(int(args.get("id")))
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+    ledger.report(p.id, today, True, evidence.strip()[:300], source=tool)
+    return {"ok": True, "kept": p.what, "seen_in": tool, "score": line_for(ledger, p, today)}
 
 
 def _question(p: Promise) -> str:
@@ -203,7 +248,7 @@ def weekly_report(ledger: Ledger, today: date) -> str:
     start = week_start(today)
     days = [start + timedelta(days=i) for i in range((today - start).days + 1)]
     lines = [f"Your week, {start.strftime('%b')} {start.day} to {today.strftime('%b')} {today.day}:"]
-    said_n = did_n = 0
+    said_n = did_n = proven_n = 0
     consequences = []
     for p in ledger.active(include_finished=True):
         created = date.fromisoformat(p.created[:10])
@@ -216,6 +261,7 @@ def weekly_report(ledger: Ledger, today: date) -> str:
             missed = sum(1 for d in window if ledger.day_report(p.id, d) is False)
             silent = len(window) - kept - missed
             said_n, did_n = said_n + len(window), did_n + kept
+            proven_n += ledger.kept_with_receipts(p.id, window[0], today)
             extra = f", {silent} with no answer" if silent else ""
             lines.append(f"- {p.what}: {kept} of {len(window)} days{extra}")
             if (missed or silent) and p.consequence:
@@ -223,6 +269,7 @@ def weekly_report(ledger: Ledger, today: date) -> str:
         elif p.cadence == "weekly":
             kept = ledger.kept_between(p.id, start, today)
             said_n, did_n = said_n + p.per_week, did_n + min(kept, p.per_week)
+            proven_n += min(ledger.kept_with_receipts(p.id, start, today), p.per_week)
             lines.append(f"- {p.what}: {kept} of {p.per_week}")
             if kept < p.per_week and today.weekday() == 6 and p.consequence:
                 consequences.append(f"{p.what}: {p.consequence}")
@@ -234,7 +281,8 @@ def weekly_report(ledger: Ledger, today: date) -> str:
                 consequences.append(f"{p.what}: {p.consequence}")
     if said_n == 0:
         return SILENT
-    lines.append(f"You said {said_n}, you did {did_n}.")
+    proof_note = f" ({proven_n} with receipts)" if proven_n else ""
+    lines.append(f"You said {said_n}, you did {did_n}{proof_note}.")
     if consequences:
         lines.append("Consequences you chose: " + "; ".join(consequences) + ".")
     return "\n".join(lines)

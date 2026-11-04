@@ -149,3 +149,31 @@ def test_mixed_answer_still_records_the_yes(ledger):
     msg = "did my 40 calls, but no gym today"
     assert partner.record(ledger, {"results": [{"id": p["id"], "kept": True}],
                                    "user_quote": "did my 40 calls"}, msg, MON)["ok"]
+
+
+def test_receipt_must_come_from_a_real_tool_result(ledger):
+    p = _add(ledger, "I'll ship code every weekday", what="Ship code", cadence="weekdays",
+             proof="GitHub commits today", user_quote="ship code every weekday")
+    assert partner.prove_first(ledger, MON) == [{"id": p["id"], "what": "Ship code",
+                                                 "proof": "GitHub commits today"}]
+    seen = [("github_list_commits", '[{"sha": "a1b2", "message": "Add nightly check-in", "date": "2026-11-02"}]')]
+    made_up = partner.prove(ledger, {"id": p["id"], "source_tool": "github_list_commits",
+                                     "evidence": "Fix login bug"}, seen, MON)
+    wrong_tool = partner.prove(ledger, {"id": p["id"], "source_tool": "strava_activities",
+                                        "evidence": "Add nightly check-in"}, seen, MON)
+    assert made_up["ok"] is False and wrong_tool["ok"] is False
+    good = partner.prove(ledger, {"id": p["id"], "source_tool": "github_list_commits",
+                                  "evidence": '"message": "Add nightly check-in"'}, seen, MON)
+    assert good["ok"] and ledger.receipt(p["id"], MON) == "github_list_commits"
+    assert partner.prove_first(ledger, MON) == []
+    text = partner.checkin(ledger, MON)
+    assert "✓ Ship code: seen in github list commits" in text and "Everything is proven" in text
+
+
+def test_receipts_counted_in_weekly_receipt(ledger):
+    p = _add(ledger, "run 3x a week", what="Run", cadence="weekly", per_week=3,
+             proof="Strava", user_quote="run 3x a week")
+    partner.prove(ledger, {"id": p["id"], "source_tool": "strava", "evidence": "Morning Run 5.2 km"},
+                  [("strava", "Morning Run 5.2 km 27:10")], MON)
+    ledger.report(p["id"], MON + timedelta(days=2), True, "yes")
+    assert "You said 3, you did 2 (1 with receipts)." in partner.weekly_report(ledger, MON + timedelta(days=2))

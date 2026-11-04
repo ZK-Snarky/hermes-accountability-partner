@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS promises (
     per_week INTEGER NOT NULL DEFAULT 1,
     due TEXT,
     consequence TEXT,
+    proof TEXT,
     quote TEXT NOT NULL,
     created TEXT NOT NULL,
     dropped TEXT,
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS reports (
     day TEXT NOT NULL,
     kept INTEGER NOT NULL,
     quote TEXT NOT NULL,
+    source TEXT,
     at TEXT NOT NULL,
     UNIQUE (promise_id, day)
 );
@@ -48,6 +50,7 @@ class Promise:
     per_week: int
     due: Optional[str]
     consequence: Optional[str]
+    proof: Optional[str]
     quote: str
     created: str
 
@@ -77,7 +80,7 @@ class Ledger:
 
     def add(self, what: str, cadence: str, quote: str, *, per_week: int = 1,
             due: Optional[str] = None, consequence: Optional[str] = None,
-            now: Optional[datetime] = None) -> Promise:
+            proof: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
         what = " ".join((what or "").split())
         if not what:
             raise ValueError("say what the promise is")
@@ -89,10 +92,11 @@ class Ledger:
             date.fromisoformat(due)  # raises on a bad date
         now = now or datetime.now()
         cur = self._db.execute(
-            "INSERT INTO promises (what, cadence, per_week, due, consequence, quote, created)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, quote, created)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (what, cadence, int(per_week) if cadence == "weekly" else 1, due,
-             (consequence or "").strip() or None, quote, now.isoformat(timespec="seconds")))
+             (consequence or "").strip() or None, (proof or "").strip() or None, quote,
+             now.isoformat(timespec="seconds")))
         self._db.commit()
         return self.get(cur.lastrowid)
 
@@ -133,15 +137,16 @@ class Ledger:
     # --- reports --------------------------------------------------------------------------
 
     def report(self, promise_id: int, day: date, kept: bool, quote: str,
-               now: Optional[datetime] = None) -> None:
-        """Record the user's word for one promise on one day. A later word for the same day wins."""
+               now: Optional[datetime] = None, source: Optional[str] = None) -> None:
+        """Record one promise on one day: the user's word (``source`` None) or a tool's receipt
+        (``source`` = the tool's name, ``quote`` = what it returned). A later report for the day wins."""
         self._get_any(promise_id)
         now = now or datetime.now()
         self._db.execute(
-            "INSERT INTO reports (promise_id, day, kept, quote, at) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO reports (promise_id, day, kept, quote, source, at) VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (promise_id, day) DO UPDATE SET kept = excluded.kept,"
-            " quote = excluded.quote, at = excluded.at",
-            (int(promise_id), day.isoformat(), 1 if kept else 0, quote,
+            " quote = excluded.quote, source = excluded.source, at = excluded.at",
+            (int(promise_id), day.isoformat(), 1 if kept else 0, quote, source,
              now.isoformat(timespec="seconds")))
         self._db.commit()
 
@@ -149,6 +154,17 @@ class Ledger:
         row = self._db.execute("SELECT kept FROM reports WHERE promise_id = ? AND day = ?",
                                (int(promise_id), day.isoformat())).fetchone()
         return None if row is None else bool(row["kept"])
+
+    def receipt(self, promise_id: int, day: date) -> Optional[str]:
+        """The tool that proved this day, if a tool did."""
+        row = self._db.execute("SELECT source FROM reports WHERE promise_id = ? AND day = ?",
+                               (int(promise_id), day.isoformat())).fetchone()
+        return None if row is None else row["source"]
+
+    def kept_with_receipts(self, promise_id: int, start: date, end: date) -> int:
+        return self._db.execute(
+            "SELECT COUNT(*) FROM reports WHERE promise_id = ? AND kept = 1 AND source IS NOT NULL"
+            " AND day BETWEEN ? AND ?", (int(promise_id), start.isoformat(), end.isoformat())).fetchone()[0]
 
     def last_report(self, promise_id: int) -> Optional[bool]:
         row = self._db.execute("SELECT kept FROM reports WHERE promise_id = ? ORDER BY day DESC LIMIT 1",
@@ -204,4 +220,5 @@ class Ledger:
 def _promise(row: sqlite3.Row) -> Promise:
     return Promise(id=row["id"], what=row["what"], cadence=row["cadence"],
                    per_week=row["per_week"], due=row["due"], consequence=row["consequence"],
+                   proof=row["proof"],
                    quote=row["quote"], created=row["created"])
