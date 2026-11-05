@@ -37,8 +37,9 @@ GUIDE = (
     "quoting their exact words; then say in one line what you saved. If they said when it starts "
     "(\"starting tomorrow\"), set starts. Copy any consequence in their own words, unchanged. If "
     "one of their connected tools could show it happened (a fitness app, GitHub, a calendar, a "
-    "location visit), set proof to say where to look and what counts, in the user's own rule if "
-    "they gave one (\"a workout on my WHOOP counts\"). Only the user's own words add, drop or mark "
+    "location visit), set proof to say where to look. If they said what counts and the tool "
+    "returns it as data, also set proof_tool and rule (\"a 30-minute WHOOP workout counts\" -> "
+    "minutes >= 30), so the plugin, not you, checks it. Only the user's own words add, drop or mark "
     "a promise, or a real result from one of their tools (promise_prove); never mark one kept or "
     "missed from your own reading of their day. The ledger's numbers are the score: repeat them, "
     "don't round up, and don't add disclaimers (such as what isn't set up)."
@@ -196,9 +197,11 @@ def _checkin(args: dict, **_: Any) -> str:
         if prove:
             return _json({"prove_first": prove, "next": (
                 "For each promise, use the user's connected tools to look for proof that it "
-                "happened today, as its proof field says. When a tool shows it, call promise_prove "
-                "quoting that tool's output. Skip any you can't check. Then call promise_checkin "
-                "again with send_now true.")})
+                "happened today. One with a rule: call the tool it names, then promise_prove with "
+                "its id; the plugin checks the rule, and you don't decide. Others: as the proof "
+                "field says, and when a tool shows it, call promise_prove quoting that tool's "
+                "output. Skip any you can't check. Then call promise_checkin again with send_now "
+                "true.")})
     return _json({"message": partner.checkin(led, day)})
 
 
@@ -237,15 +240,23 @@ TOOLS = [
             "Optional: which connected tool shows it happened and what counts as a win, in the "
             "user's words, e.g. 'a WHOOP workout of 30+ minutes' or 'a commit to acme/app on "
             "GitHub'.")},
+        "proof_tool": {"type": "string", "description": (
+            "With rule: the exact name of the connected tool whose data decides it.")},
+        "rule": {"type": "string", "description": (
+            "Optional, when the user said what counts and a tool's data can show it: a check the "
+            "plugin runs on that tool's result, e.g. 'minutes >= 30', 'sport = running and "
+            "minutes >= 30', 'message contains fix'. Use the field names the tool returns.")},
         "user_quote": _QUOTE,
     }, ["what", "cadence", "user_quote"]),
     ("promise_prove", _prove, (
         "Mark a promise kept from a receipt: a result one of the user's connected tools returned "
-        "in this session. evidence must be copied exactly from that tool's output; it is checked."), {
+        "in this session. For a promise with a rule, just give id after calling its tool: the "
+        "plugin checks the rule against the data. Otherwise evidence must be copied exactly from "
+        "that tool's output; it is checked."), {
         "id": {"type": "integer"},
         "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
         "evidence": {"type": "string", "description": "Exact text from that tool's output that shows it happened."},
-    }, ["id", "source_tool", "evidence"]),
+    }, ["id"]),
     ("promise_lock", _lock_in, (
         "Lock a promise in, only when the user explicitly asks ('lock it in', 'hold me to it'): "
         "on a miss its consequence fires without asking again, and it can't be dropped or softened "

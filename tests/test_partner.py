@@ -310,3 +310,64 @@ def test_compact_json_quote_matches_spaced_tool_output():
     quote = '{"status":"sent","amount":20,"ok":true,"tx":"test_e84c91ad92"}'
     assert partner._tool_said("wallet_send", quote, [("wallet_send", result)]) is None
     assert partner._tool_said("wallet_send", '"amount":25', [("wallet_send", result)]) is not None
+
+
+WHOOP = "whoop_workouts_today"
+
+
+def _whoop(minutes, sport="Running"):
+    import json
+    return json.dumps({"date": "2026-11-09", "workouts": [{"sport": sport, "minutes": minutes}]})
+
+
+def _ruled(ledger, day, rule="minutes >= 30"):
+    msg = "I'll work out every day, a 30 minute WHOOP workout counts"
+    out = partner.add(ledger, {"what": "Work out", "cadence": "daily", "user_quote": msg,
+                               "proof_tool": WHOOP, "rule": rule}, msg, day)
+    assert out["ok"], out
+    return out["id"]
+
+
+def test_rule_decides_from_the_tools_data(ledger):
+    day = date(2026, 11, 9)
+    pid = _ruled(ledger, day)
+    out = partner.prove(ledger, {"id": pid}, [(WHOOP, _whoop(42))], day)
+    assert out["ok"] and out["evidence"] == "minutes 42"
+    assert "seen in whoop workouts today (minutes 42, rule minutes >= 30)" in partner.checkin(ledger, day)
+
+
+def test_rule_not_met_is_asked_not_missed(ledger):
+    day = date(2026, 11, 10)
+    pid = _ruled(ledger, day)
+    out = partner.prove(ledger, {"id": pid}, [(WHOOP, _whoop(18))], day)
+    assert not out["ok"] and "minutes 18" in out["not_proven"]
+    assert ledger.day_report(pid, day) is None  # never recorded as a miss
+    text = partner.checkin(ledger, day)
+    assert "Work out?" in text and "whoop workouts today shows minutes 18; your rule: minutes >= 30" in text
+
+
+def test_rule_needs_its_tool_called_and_ignores_the_models_quote(ledger):
+    day = date(2026, 11, 9)
+    pid = _ruled(ledger, day)
+    assert not partner.prove(ledger, {"id": pid, "evidence": "minutes 42"}, [], day)["ok"]
+    other = partner.prove(ledger, {"id": pid}, [("other_tool", _whoop(42))], day)
+    assert not other["ok"]
+
+
+def test_rule_with_two_parts_and_wrapped_json(ledger):
+    import json
+    day = date(2026, 11, 9)
+    pid = _ruled(ledger, day, "sport = running and minutes >= 30")
+    walk = json.dumps({"content": [{"type": "text", "text": _whoop(50, "Walking")}]})
+    assert not partner.prove(ledger, {"id": pid}, [(WHOOP, walk)], day)["ok"]
+    run = json.dumps({"content": [{"type": "text", "text": _whoop(31)}]})
+    assert partner.prove(ledger, {"id": pid}, [(WHOOP, run)], day)["ok"]
+
+
+def test_bad_rule_or_missing_tool_is_refused(ledger):
+    day = date(2026, 11, 9)
+    msg = "I'll work out every day"
+    base = {"what": "Work out", "cadence": "daily", "user_quote": msg}
+    assert not partner.add(ledger, {**base, "rule": "minutes >= 30"}, msg, day)["ok"]
+    assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "rule": "lots of minutes"}, msg, day)["ok"]
+    assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "rule": "minutes >= thirty"}, msg, day)["ok"]

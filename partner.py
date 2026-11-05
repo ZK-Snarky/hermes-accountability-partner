@@ -8,6 +8,7 @@ code. The agent can phrase things, but it can't invent a promise or a "done".
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -49,12 +50,22 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         return {"ok": False, "error": (
             "consequence must be the user's own words, copied exactly from their message. Don't "
             "reword or add to it; leave it out if they didn't name one.")}
+    rule = (args.get("rule") or "").strip() or None
+    proof_tool = (args.get("proof_tool") or "").strip() or None
+    if rule:
+        if not proof_tool:
+            return {"ok": False, "error": "A rule needs proof_tool: the exact name of the tool whose data it checks."}
+        try:
+            parse_rule(rule)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
     try:
         p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
                        consequence=args.get("consequence"), proof=args.get("proof"),
                        enforcer=args.get("enforcer_tool"), max_amount=args.get("max_amount"),
                        pay_to=args.get("pay_to"), starts=args.get("starts") or None,
+                       proof_tool=proof_tool, rule=rule,
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -65,7 +76,78 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         out["consequence"] = p.consequence
     if p.proof:
         out["proof"] = p.proof
+    if p.rule:
+        out["counts_when"] = f"{p.rule} in {p.proof_tool}"
     return out
+
+
+# --- rules: the plugin, not the model, decides whether a tool's data meets the user's rule ----
+
+_COND = re.compile(r"^\s*([\w.]+)\s*(>=|<=|==|=|>|<|contains)\s*(.+?)\s*$", re.I)
+
+
+def parse_rule(rule: str) -> list[tuple[str, str, object]]:
+    """'minutes >= 30', 'sport = running and minutes >= 30', 'message contains fix'."""
+    conds = []
+    for part in re.split(r"\s+and\s+", (rule or "").strip(), flags=re.I):
+        m = _COND.match(part)
+        if not m:
+            raise ValueError(f"Can't read the rule part {part!r}. Use 'field >= number', "
+                             "'field = text' or 'field contains text', joined by 'and'.")
+        field, op, value = m.group(1).lower(), m.group(2).lower(), m.group(3).strip().strip("'\"")
+        if op in (">=", "<=", ">", "<"):
+            try:
+                value = float(value)
+            except ValueError:
+                raise ValueError(f"{field} {op} needs a number, not {value!r}.") from None
+        conds.append((field, "=" if op == "==" else op, value))
+    return conds
+
+
+def _records(data):
+    """Every dict inside a tool result, unwrapping JSON held in strings (as MCP text often is)."""
+    if isinstance(data, str):
+        text = data.strip()
+        if text[:1] in "{[":
+            try:
+                yield from _records(json.loads(text))
+            except ValueError:
+                pass
+    elif isinstance(data, dict):
+        yield data
+        for v in data.values():
+            yield from _records(v)
+    elif isinstance(data, list):
+        for v in data:
+            yield from _records(v)
+
+
+def _meets(value, op, want) -> bool:
+    if op in (">=", "<=", ">", "<"):
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return False
+        return {">=": v >= want, "<=": v <= want, ">": v > want, "<": v < want}[op]
+    if op == "contains":
+        return str(want).lower() in str(value).lower()
+    return str(value).strip().lower() == str(want).lower()
+
+
+def check_rule(rule: str, results: list[str]) -> tuple[Optional[str], Optional[str]]:
+    """(evidence, None) when one record in the results meets every part of the rule;
+    (None, reading) with what the data showed when none does; (None, None) when there's no data."""
+    conds = parse_rule(rule)
+    seen = []
+    for text in results:
+        for rec in _records(text):
+            fields = {str(k).lower(): v for k, v in rec.items()}
+            if not any(f in fields for f, _, _ in conds):
+                continue
+            if all(f in fields and _meets(fields[f], op, want) for f, op, want in conds):
+                return ", ".join(f"{f} {fields[f]}" for f, _, _ in conds), None
+            seen.append(", ".join(f"{f} {fields[f]}" for f, _, _ in conds if f in fields))
+    return None, ("; ".join(dict.fromkeys(seen)) if seen else None)
 
 
 _LOCK_WORDS = re.compile(r"\b(lock|locked|hold me to it|no backing out|no way out|can't back out)\b")
@@ -206,8 +288,10 @@ def to_ask(ledger: Ledger, today: date) -> list[Promise]:
 
 def prove_first(ledger: Ledger, today: date) -> list[dict]:
     """Tonight's promises that name a proof and have no answer yet: look for receipts first."""
-    return [{"id": p.id, "what": p.what, "proof": p.proof} for p in to_ask(ledger, today)
-            if p.proof and ledger.day_report(p.id, today) is None]
+    return [{"id": p.id, "what": p.what,
+             **({"call": p.proof_tool, "rule": p.rule} if p.rule else {"proof": p.proof})}
+            for p in to_ask(ledger, today)
+            if (p.proof or p.rule) and ledger.day_report(p.id, today) is None]
 
 
 def checkin(ledger: Ledger, today: date) -> str:
@@ -219,14 +303,17 @@ def checkin(ledger: Ledger, today: date) -> str:
         return SILENT
     lines = [f"Check-in for {today.strftime('%a %b')} {today.day}:"]
     for p in seen:
-        lines.append(f"✓ {p.what}: seen in {_tool_label(ledger.receipt(p.id, today))} "
+        shown = f" ({ledger.report_quote(p.id, today)}, rule {p.rule})" if p.rule else ""
+        lines.append(f"✓ {p.what}: seen in {_tool_label(ledger.receipt(p.id, today))}{shown} "
                      f"({line_for(ledger, p, today)})")
     if not asks:
         ledger.clear_pending()
         lines.append("Nothing to ask tonight. Everything is proven.")
         return "\n".join(lines)
     for n, p in enumerate(asks, 1):
-        lines.append(f"{n}. {_question(p)} ({line_for(ledger, p, today)})")
+        seen_note = ledger.reading(p.id, today)
+        lines.append(f"{n}. {_question(p)} ({line_for(ledger, p, today)})"
+                     + (f"\n   {seen_note}" if seen_note else ""))
     example = " ".join(["yes", "no", "yes"][: len(asks)] + ["yes"] * max(0, len(asks) - 3))
     lines.append(f'Reply in order, like "{example}".' if len(asks) > 1 else 'Reply "yes" or "no".')
     ledger.set_pending(today, [p.id for p in asks])
@@ -257,6 +344,12 @@ def prove(ledger: Ledger, args: dict, tool_results: list, today: date) -> dict:
     returned in this session (``tool_results`` = [(tool name, result text)], seen by the hook)."""
     tool = (args.get("source_tool") or "").strip()
     evidence = args.get("evidence") or ""
+    try:
+        ruled = ledger.get(int(args.get("id")))
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+    if ruled.rule:
+        return _prove_by_rule(ledger, ruled, tool_results, today)
     refused = _tool_said(tool, evidence, tool_results)
     if refused:
         return refused
@@ -266,6 +359,22 @@ def prove(ledger: Ledger, args: dict, tool_results: list, today: date) -> dict:
         return {"ok": False, "error": str(exc)}
     ledger.report(p.id, today, True, evidence.strip()[:300], source=tool)
     return {"ok": True, "kept": p.what, "seen_in": tool, "score": line_for(ledger, p, today)}
+
+
+def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) -> dict:
+    results = [text for name, text in tool_results if name == p.proof_tool]
+    if not results:
+        return {"ok": False, "error": f"Call {p.proof_tool} first; its data decides this one."}
+    evidence, reading = check_rule(p.rule, results)
+    if evidence:
+        ledger.report(p.id, today, True, evidence[:300], source=p.proof_tool)
+        return {"ok": True, "kept": p.what, "seen_in": p.proof_tool, "rule": p.rule,
+                "evidence": evidence, "score": line_for(ledger, p, today)}
+    shown = f"{_tool_label(p.proof_tool)} shows {reading}" if reading else \
+        f"{_tool_label(p.proof_tool)} has nothing for it"
+    ledger.set_reading(p.id, today, f"{shown}; your rule: {p.rule}")
+    return {"ok": False, "not_proven": f"{shown}; the rule is {p.rule}. Not marked: it will be "
+            "asked at the check-in. Don't mark it yourself."}
 
 
 def _question(p: Promise) -> str:

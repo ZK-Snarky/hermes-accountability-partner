@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS promises (
     locked_until TEXT,
     locked_at TEXT,
     starts TEXT,
+    proof_tool TEXT,
+    rule TEXT,
     quote TEXT NOT NULL,
     created TEXT NOT NULL,
     dropped TEXT,
@@ -74,6 +76,8 @@ class Promise:
     locked_until: Optional[str] = None
     locked_at: Optional[str] = None
     starts: Optional[str] = None
+    proof_tool: Optional[str] = None
+    rule: Optional[str] = None
 
     def _from(self) -> str:
         return _from_label(self)
@@ -116,7 +120,7 @@ class Ledger:
         have = {r["name"] for r in self._db.execute("PRAGMA table_info(promises)")}
         for col, kind in (("proof", "TEXT"), ("enforcer", "TEXT"), ("max_amount", "REAL"),
                           ("pay_to", "TEXT"), ("locked_until", "TEXT"), ("locked_at", "TEXT"),
-                          ("starts", "TEXT")):
+                          ("starts", "TEXT"), ("proof_tool", "TEXT"), ("rule", "TEXT")):
             if col not in have:
                 self._db.execute(f"ALTER TABLE promises ADD COLUMN {col} {kind}")
         if "source" not in {r["name"] for r in self._db.execute("PRAGMA table_info(reports)")}:
@@ -128,7 +132,8 @@ class Ledger:
             due: Optional[str] = None, consequence: Optional[str] = None,
             proof: Optional[str] = None, enforcer: Optional[str] = None,
             max_amount: Optional[float] = None, pay_to: Optional[str] = None,
-            starts: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
+            starts: Optional[str] = None, proof_tool: Optional[str] = None,
+            rule: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
         what = " ".join((what or "").split())
         if not what:
             raise ValueError("say what the promise is")
@@ -143,11 +148,13 @@ class Ledger:
         now = now or datetime.now()
         cur = self._db.execute(
             "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, enforcer,"
-            " max_amount, pay_to, starts, quote, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " max_amount, pay_to, starts, proof_tool, rule, quote, created)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (what, cadence, int(per_week) if cadence == "weekly" else 1, due,
              (consequence or "").strip() or None, (proof or "").strip() or None,
              (enforcer or "").strip() or None, float(max_amount) if max_amount else None,
-             (pay_to or "").strip() or None, starts or None, quote, now.isoformat(timespec="seconds")))
+             (pay_to or "").strip() or None, starts or None, (proof_tool or "").strip() or None,
+             (rule or "").strip() or None, quote, now.isoformat(timespec="seconds")))
         self._db.commit()
         return self.get(cur.lastrowid)
 
@@ -221,6 +228,11 @@ class Ledger:
         row = self._db.execute("SELECT source FROM reports WHERE promise_id = ? AND day = ?",
                                (int(promise_id), day.isoformat())).fetchone()
         return None if row is None else row["source"]
+
+    def report_quote(self, promise_id: int, day: date) -> Optional[str]:
+        row = self._db.execute("SELECT quote FROM reports WHERE promise_id = ? AND day = ?",
+                               (int(promise_id), day.isoformat())).fetchone()
+        return None if row is None else row["quote"]
 
     def kept_with_receipts(self, promise_id: int, start: date, end: date) -> int:
         return self._db.execute(
@@ -296,6 +308,17 @@ class Ledger:
             return None
         return date.fromisoformat(day), [int(i) for i in ids.split(",") if i]
 
+    def set_reading(self, promise_id: int, day: date, text: str) -> None:
+        """What a proof tool showed when it didn't meet the rule; shown at the check-in."""
+        self._db.execute("INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE"
+                         " SET value = excluded.value", (f"reading:{promise_id}:{day.isoformat()}", text))
+        self._db.commit()
+
+    def reading(self, promise_id: int, day: date) -> Optional[str]:
+        row = self._db.execute("SELECT value FROM state WHERE key = ?",
+                               (f"reading:{promise_id}:{day.isoformat()}",)).fetchone()
+        return row["value"] if row else None
+
     def clear_pending(self) -> None:
         self._db.execute("DELETE FROM state WHERE key = 'pending'")
         self._db.commit()
@@ -317,5 +340,5 @@ def _promise(row: sqlite3.Row) -> Promise:
                    per_week=row["per_week"], due=row["due"], consequence=row["consequence"],
                    proof=row["proof"], enforcer=row["enforcer"], max_amount=row["max_amount"],
                    pay_to=row["pay_to"], locked_until=row["locked_until"], locked_at=row["locked_at"],
-                   starts=row["starts"],
+                   starts=row["starts"], proof_tool=row["proof_tool"], rule=row["rule"],
                    quote=row["quote"], created=row["created"])

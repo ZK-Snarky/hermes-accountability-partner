@@ -11,7 +11,11 @@ receipts instead of just taking your word for it.
   in your words: "a workout on my WHOOP counts", "a commit to my repo on GitHub", "a Strava run over
   5k", "a visit to the gym" from a location tool. Before
   each check-in, Hermes looks with your connected tools (any MCP server or plugin) and marks what it
-  can prove. It only asks you about the rest. The plugin knows nothing about any one service: it works
+  can prove. It only asks you about the rest.
+- **Your rule, checked by code.** Say what counts ("a 30-minute WHOOP workout counts") and the
+  plugin saves it as a rule (`minutes >= 30`) on that tool's data. At check-in Hermes fetches the
+  data and the plugin, not the model, decides. If the data falls short or is missing, nothing is
+  marked missed: you're asked, and the check-in shows what the tool saw. The plugin knows nothing about any one service: it works
   with whatever your Hermes can already reach.
 - **Consequences that actually happen.** "If I miss the gym, send $20 to charity from my wallet" or
   "block Instagram for a day." On a miss, Hermes carries it out with whatever you've connected: an
