@@ -418,3 +418,19 @@ def test_not_proven_tells_the_agent_to_ask_now(ledger):
     pid = _ruled(ledger, day)
     out = partner.prove(ledger, {"id": pid}, [(WHOOP, _whoop(18))], day)
     assert "yes or no" in out["not_proven"] and "promise_record" in out["not_proven"]
+
+
+def test_a_host_can_supply_the_ledger(tmp_path, monkeypatch):
+    import json
+    import accountability_partner as plugin
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    hosted = Ledger(tmp_path / "host.db")
+    plugin.use_ledger(lambda: hosted)
+    try:
+        plugin.on_pre_llm_call(session_id="h", user_message="I'll read 10 pages every day")
+        out = json.loads(plugin._add({"what": "Read", "cadence": "daily",
+                                      "user_quote": "read 10 pages every day"}, session_id="h"))
+        assert out["ok"] and [p.what for p in hosted.active()] == ["Read"]
+        assert not (tmp_path / "home" / "plugin-data").exists()
+    finally:
+        plugin.use_ledger(None)

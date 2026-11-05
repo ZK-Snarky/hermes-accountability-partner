@@ -61,9 +61,22 @@ def _data_dir() -> Path:
         return path
 
 
+_ledger_source = None
+
+
+def use_ledger(source) -> None:
+    """For a host plugin that keeps promises in its own store: ``source`` is a no-argument
+    callable returning an object with Ledger's methods. Call it from your plugin's register().
+    None goes back to the plugin's own file."""
+    global _ledger_source
+    _ledger_source = source
+
+
 def ledger() -> Ledger:
     """One ledger per Hermes profile; reopened if the active profile's home changes."""
     global _ledger, _ledger_path
+    if _ledger_source is not None:
+        return _ledger_source()
     path = _data_dir() / "ledger.db"
     with _lock:
         if _ledger is None or _ledger_path != path:

@@ -118,3 +118,9 @@ hermes plugins validate . --install-deps
 ```
 
 MIT licensed.
+
+## For other plugins
+
+A plugin that already keeps commitments in its own store can have this one use it: call
+`use_ledger(fn)` from your `register()`, where `fn()` returns an object with the same methods as
+`ledger.Ledger`. Nothing changes for anyone who doesn't.
