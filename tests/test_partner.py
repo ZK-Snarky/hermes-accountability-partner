@@ -284,3 +284,22 @@ def test_tools_work_through_the_real_ledger_setup(tmp_path, monkeypatch):
     for _name, handler, *_ in plugin.TOOLS:
         json.loads(handler({}, session_id="s"))  # every tool answers, none crashes
     assert "Read" in plugin._promises_command("")
+
+
+def test_plain_yes_answers_a_direct_question(ledger):
+    p = _add(ledger, "gym 3x a week", what="Gym", cadence="weekly", per_week=3,
+             user_quote="gym 3x a week")
+    ok = partner.record(ledger, {"results": [{"id": p["id"], "kept": True}], "user_quote": "yes"},
+                        "I basically did the gym\nyes", MON)
+    assert ok["ok"] and ledger.day_report(p["id"], MON) is True
+    # a "no" can't be turned into a kept
+    assert partner.record(ledger, {"results": [{"id": p["id"], "kept": True}], "user_quote": "no"},
+                          "no", MON)["ok"] is False
+
+
+def test_nothing_recorded_before_a_promise_starts(ledger):
+    p = _add(ledger, "starting tomorrow gym 3x a week", what="Gym", cadence="weekly", per_week=3,
+             starts=(MON + timedelta(days=1)).isoformat(), user_quote="gym 3x a week")
+    out = partner.record(ledger, {"results": [{"id": p["id"], "kept": True}], "user_quote": "yes"},
+                         "yes", MON)
+    assert out["ok"] is False and ledger.day_report(p["id"], MON) is None

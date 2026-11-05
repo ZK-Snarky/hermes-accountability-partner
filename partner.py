@@ -134,9 +134,14 @@ def _negated(quote: str, message: str) -> bool:
 
 
 def record(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict:
-    refused = _need_words(args.get("user_quote", ""), message)
-    if refused:
-        return refused
+    results = args.get("results") or []
+    bare = answers.parse(_current(message).strip(), 1)  # a plain "yes" / "no" to a direct question
+    if bare and results and all(bool(r.get("kept")) == bare[0] for r in results):
+        args = {**args, "user_quote": _current(message).strip()}
+    else:
+        refused = _need_words(args.get("user_quote", ""), message)
+        if refused:
+            return refused
     wants_kept = any(item.get("kept") for item in args.get("results") or [])
     if wants_kept and _HEDGE_WORDS.search(_norm(_current(message))):
         return {"ok": False, "error": (
@@ -149,13 +154,15 @@ def record(ledger: Ledger, args: dict, message: Optional[str], today: date) -> d
     day = today
     if args.get("day") == "yesterday":
         day = today - timedelta(days=1)
-    results = args.get("results") or []
     if not results:
         return {"ok": False, "error": "results is empty"}
     saved = []
     for item in results:
         try:
             p = ledger.get(int(item["id"]))
+            if p.first_day() > day:
+                return {"ok": False, "error": f"{p.what} starts {p.first_day().isoformat()}; nothing "
+                                              "to record before then.", "saved_so_far": saved}
             ledger.report(p.id, day, bool(item["kept"]), args["user_quote"])
         except (KeyError, TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc), "saved_so_far": saved}

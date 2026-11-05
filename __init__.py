@@ -40,7 +40,7 @@ GUIDE = (
     "location visit), set proof to say where to look. Only the user's own words add, drop or mark "
     "a promise, or a real result from one of their tools (promise_prove); never mark one kept or "
     "missed from your own reading of their day. The ledger's numbers are the score: repeat them, "
-    "don't round up, and don't add disclaimers."
+    "don't round up, and don't add disclaimers (such as what isn't set up)."
 )
 
 
