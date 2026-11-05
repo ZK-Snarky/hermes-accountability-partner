@@ -5,4 +5,5 @@ author: ZK-Snarky
 provides_tools:
   - demo_github_commits_today
   - demo_wallet_send
-provides_hooks: []
+provides_hooks:
+  - pre_llm_call

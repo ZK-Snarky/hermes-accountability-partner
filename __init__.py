@@ -1,14 +1,34 @@
 """DEMO ONLY. Two stand-in tools for filming: today's commits on a sample repo, and a test-mode
-wallet that moves no money. Nothing here touches the network."""
+wallet that moves no money. Nothing here touches the network.
+
+Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
+Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
+lock cool-off, stay real. Unset, everything uses the real date."""
 
 import json
+import os
+import sys
 import uuid
 from datetime import date
 
 
+def _today() -> date:
+    value = os.environ.get("DEMO_TODAY")
+    return date.fromisoformat(value) if value else date.today()
+
+
+def _set_clock(**_):
+    """Point the Accountability Partner's today() at the demo clock (it may load after us)."""
+    if not os.environ.get("DEMO_TODAY"):
+        return
+    for name, mod in list(sys.modules.items()):
+        if name.endswith("accountability_partner") and callable(getattr(mod, "ledger", None)):
+            mod.today = _today
+
+
 def _commits(args, **_):
     repo = args.get("repo") or "maya/side-project"
-    today = date.today().isoformat()
+    today = _today().isoformat()
     return json.dumps({"repo": repo, "date": today, "commits": [
         {"sha": "4f2c9a1", "message": "Add streak badge to the dashboard", "time": f"{today}T19:42:10"},
         {"sha": "b81e03d", "message": "Fix timezone bug in reminders", "time": f"{today}T20:15:33"},
@@ -22,6 +42,8 @@ def _send(args, **_):
 
 
 def register(ctx):
+    _set_clock()
+    ctx.register_hook("pre_llm_call", _set_clock)
     ctx.register_tool(name="demo_github_commits_today", toolset="demo", handler=_commits,
                       description="DEMO: list today's commits on a GitHub repo.", schema={
         "name": "demo_github_commits_today", "description": "DEMO: list today's commits on a GitHub repo.",
