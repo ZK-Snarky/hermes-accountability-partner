@@ -1,0 +1,8 @@
+name: demo-tools
+version: "0.1.0"
+description: "DEMO ONLY, not for real use: a fake GitHub commits lookup and a test-mode wallet (no real money) for filming the Accountability Partner demo."
+author: ZK-Snarky
+provides_tools:
+  - demo_github_commits_today
+  - demo_wallet_send
+provides_hooks: []
