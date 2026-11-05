@@ -27,7 +27,7 @@ def _set_clock(**_):
 
 
 def _commits(args, **_):
-    repo = args.get("repo") or "maya/side-project"
+    repo = args.get("repo") or "my-app"
     today = _today().isoformat()
     if os.environ.get("DEMO_GITHUB_EMPTY"):  # film a day with nothing pushed
         return json.dumps({"repo": repo, "date": today, "commits": []})
