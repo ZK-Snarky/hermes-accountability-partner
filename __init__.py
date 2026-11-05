@@ -1,5 +1,5 @@
 """DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts,
-and a test-mode wallet that moves no money. Nothing here touches the network.
+and the agent's test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
 Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
@@ -61,9 +61,9 @@ def register(ctx):
                       description="DEMO: list today's workouts from WHOOP.", schema={
         "name": "demo_whoop_workouts_today", "description": "DEMO: list today's workouts from WHOOP.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
-    ctx.register_tool(name="demo_wallet_send", toolset="demo", handler=_send,
-                      description="DEMO test-mode wallet: send money (no real money moves).", schema={
-        "name": "demo_wallet_send", "description": "DEMO test-mode wallet: send money (no real money moves).",
+    ctx.register_tool(name="demo_agent_wallet_send", toolset="demo", handler=_send,
+                      description="DEMO agent wallet, test mode: the agent pays from it (no real money moves).", schema={
+        "name": "demo_agent_wallet_send", "description": "DEMO agent wallet, test mode: the agent pays from it (no real money moves).",
         "parameters": {"type": "object", "properties": {
             "amount": {"type": "number"}, "to": {"type": "string"}, "memo": {"type": "string"}},
             "required": ["amount", "to"]}})
