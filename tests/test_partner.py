@@ -434,3 +434,48 @@ def test_a_host_can_supply_the_ledger(tmp_path, monkeypatch):
         assert not (tmp_path / "home" / "plugin-data").exists()
     finally:
         plugin.use_ledger(None)
+
+
+def test_checkin_fetches_the_data_itself(ledger):
+    day = date(2026, 11, 9)
+    msg = "I'll work out every day, a 30 minute WHOOP workout counts"
+    pid = partner.add(ledger, {"what": "Work out", "cadence": "daily", "user_quote": msg,
+                               "proof_tool": WHOOP, "proof_args": {"days": 1},
+                               "rule": "minutes >= 30"}, msg, day)["id"]
+    calls = []
+
+    def fetch(tool, args):
+        calls.append((tool, args))
+        return _whoop(42)
+    assert partner.check_by_fetching(ledger, day, fetch) == []
+    assert calls == [(WHOOP, {"days": 1})]
+    assert partner.prove_first(ledger, day) == []
+    assert "✓ Work out: seen in whoop workouts today (minutes 42" in partner.checkin(ledger, day)
+    assert ledger.day_report(pid, day) is True
+
+
+def test_short_data_fetched_is_asked_and_a_failing_tool_is_left_to_the_agent(ledger):
+    day = date(2026, 11, 10)
+    short = _ruled(ledger, day)
+    msg = "I'll stretch every day, a 10 minute session counts"
+    broken = partner.add(ledger, {"what": "Stretch", "cadence": "daily", "user_quote": msg,
+                                  "proof_tool": "stretch_log", "rule": "minutes >= 10"}, msg, day)["id"]
+
+    def fetch(tool, args):
+        if tool == "stretch_log":
+            raise RuntimeError("not connected")
+        return _whoop(18)
+    assert partner.check_by_fetching(ledger, day, fetch) == [broken]
+    assert [p["id"] for p in partner.prove_first(ledger, day)] == [broken]
+    assert ledger.day_report(short, day) is None
+    assert "shows minutes 18; your rule: minutes >= 30" in partner.checkin(ledger, day)
+
+
+def test_acting_tools_cant_be_proof(ledger):
+    day = date(2026, 11, 9)
+    msg = "I'll work out every day"
+    base = {"what": "Work out", "cadence": "daily", "user_quote": msg, "rule": "minutes >= 30"}
+    for tool in ("terminal", "send_message", "promise_list"):
+        assert not partner.add(ledger, {**base, "proof_tool": tool}, msg, day)["ok"]
+    assert not partner.add(ledger, {**base, "proof_tool": "wallet", "enforcer_tool": "wallet"}, msg, day)["ok"]
+    assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "proof_args": "days=1"}, msg, day)["ok"]

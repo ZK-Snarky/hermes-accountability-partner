@@ -38,7 +38,7 @@ GUIDE = (
     "(\"starting tomorrow\"), set starts. Copy any consequence in their own words, unchanged. If "
     "one of their connected tools could show it happened (a fitness app, GitHub, a calendar, a "
     "location visit), set proof to say where to look. If they said what counts and the tool "
-    "returns it as data, also set proof_tool and rule (\"a 30-minute WHOOP workout counts\" -> "
+    "returns it as data, also set proof_tool, proof_args and rule (\"a 30-minute WHOOP workout counts\" -> "
     "minutes >= 30), so the plugin, not you, checks it. Only the user's own words add, drop or mark "
     "a promise, or a real result from one of their tools (promise_prove); never mark one kept or "
     "missed from your own reading of their day. The ledger's numbers are the score: repeat them, "
@@ -178,7 +178,18 @@ def _record(args: dict, session_id: str = "", **_: Any) -> str:
 
 
 def _prove(args: dict, session_id: str = "", **_: Any) -> str:
-    return _json(partner.prove(ledger(), args, _results_this_session(session_id), today()))
+    led, results = ledger(), _results_this_session(session_id)
+    try:
+        p = led.get(int(args.get("id")))
+    except (KeyError, TypeError, ValueError):
+        p = None
+    if p is not None and p.rule and p.proof_tool:
+        try:  # a rule's data is fetched fresh by the plugin, not taken from the conversation
+            fresh = _fetch(p.proof_tool, json.loads(p.proof_args) if p.proof_args else {})
+            results = [(p.proof_tool, fresh)]
+        except Exception:
+            pass
+    return _json(partner.prove(led, args, results, today()))
 
 
 def _lock_in(args: dict, session_id: str = "", **_: Any) -> str:
@@ -203,9 +214,19 @@ def _list(args: dict, **_: Any) -> str:
     return _json(partner.listing(ledger(), today()))
 
 
+_ctx = None  # the PluginContext, for ctx.dispatch_tool
+
+
+def _fetch(tool: str, args: dict) -> str:
+    if _ctx is None:
+        raise RuntimeError("no plugin context")
+    return _ctx.dispatch_tool(tool, args)
+
+
 def _checkin(args: dict, **_: Any) -> str:
     led, day = ledger(), today()
     if not args.get("send_now"):
+        partner.check_by_fetching(led, day, _fetch)
         prove = partner.prove_first(led, day)
         if prove:
             return _json({"prove_first": prove, "next": (
@@ -256,7 +277,11 @@ TOOLS = [
             "user's words, e.g. 'a WHOOP workout of 30+ minutes' or 'a commit to acme/app on "
             "GitHub'.")},
         "proof_tool": {"type": "string", "description": (
-            "With rule: the exact name of the connected tool whose data decides it.")},
+            "With rule: the exact name of the connected read-only tool whose data decides it. "
+            "At check-in the plugin calls it itself with proof_args.")},
+        "proof_args": {"type": "object", "description": (
+            "With proof_tool: the arguments that fetch today's data, e.g. {\"repo\": \"me/my-app\"}. "
+            "Call the tool once first if you need to see what it takes and returns.")},
         "rule": {"type": "string", "description": (
             "Optional, when the user said what counts and a tool's data can show it: a check the "
             "plugin runs on that tool's result, e.g. 'minutes >= 30', 'sport = running and "
@@ -267,8 +292,8 @@ TOOLS = [
     }, ["what", "cadence", "user_quote"]),
     ("promise_prove", _prove, (
         "Mark a promise kept from a receipt: a result one of the user's connected tools returned "
-        "in this session. For a promise with a rule, just give id after calling its tool: the "
-        "plugin checks the rule against the data. Otherwise evidence must be copied exactly from "
+        "in this session. For a promise with a rule, just give id: the plugin fetches the data "
+        "itself and checks the rule. Otherwise evidence must be copied exactly from "
         "that tool's output; it is checked."), {
         "id": {"type": "integer"},
         "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
@@ -323,6 +348,8 @@ def _promises_command(raw_args: str = "") -> str:
 
 
 def register(ctx) -> None:
+    global _ctx
+    _ctx = ctx
     for name, handler, description, props, required in TOOLS:
         ctx.register_tool(
             name=name, toolset=TOOLSET, handler=handler, description=description, emoji="🤝",

@@ -52,6 +52,14 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
             "reword or add to it; leave it out if they didn't name one.")}
     rule = (args.get("rule") or "").strip() or None
     proof_tool = (args.get("proof_tool") or "").strip() or None
+    proof_args = args.get("proof_args") or None
+    if proof_args is not None and not isinstance(proof_args, dict):
+        return {"ok": False, "error": "proof_args must be an object of the proof tool's arguments."}
+    if proof_tool and (proof_tool.startswith("promise_") or proof_tool in NOT_PROOF_TOOLS
+                       or proof_tool == (args.get("enforcer_tool") or "").strip()):
+        return {"ok": False, "error": (
+            f"{proof_tool} can't be a proof tool: use a read-only tool that shows the data, "
+            "like a fitness app's workouts or GitHub's commits.")}
     if rule:
         if not proof_tool:
             return {"ok": False, "error": "A rule needs proof_tool: the exact name of the tool whose data it checks."}
@@ -70,6 +78,7 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
                        enforcer=args.get("enforcer_tool"), max_amount=args.get("max_amount"),
                        pay_to=args.get("pay_to"), starts=args.get("starts") or None,
                        proof_tool=proof_tool, rule=rule,
+                       proof_args=json.dumps(proof_args, sort_keys=True) if proof_args else None,
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -316,7 +325,8 @@ def prove_first(ledger: Ledger, today: date) -> list[dict]:
     return [{"id": p.id, "what": p.what,
              **({"call": p.proof_tool, "rule": p.rule} if p.rule else {"proof": p.proof})}
             for p in to_ask(ledger, today)
-            if (p.proof or p.rule) and ledger.day_report(p.id, today) is None]
+            if (p.proof or p.rule) and ledger.day_report(p.id, today) is None
+            and ledger.reading(p.id, today) is None]
 
 
 def checkin(ledger: Ledger, today: date) -> str:
@@ -401,6 +411,32 @@ def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) 
     return {"ok": False, "not_proven": f"{shown}; the rule is {p.rule}. Not marked. Tell the user "
             "what the tool shows and ask them plainly: did they do it today, yes or no? Record "
             "their answer with promise_record. Don't mark it yourself."}
+
+
+# Tools that act rather than read: never called as proof (the plugin calls a proof tool itself).
+NOT_PROOF_TOOLS = frozenset({
+    "terminal", "execute_code", "write_file", "patch", "delegate_task", "send_message",
+    "cronjob", "browser_navigate", "browser_click", "browser_type", "memory", "skill_manage"})
+
+
+def check_by_fetching(ledger: Ledger, today: date, fetch) -> list[int]:
+    """Code, not the model, gets the data: for each promise with a rule still open tonight, call
+    ``fetch(tool, args)`` (the host's tool dispatch) and check the rule on what comes back.
+    Returns the ids it couldn't fetch, so the model can try those."""
+    failed = []
+    for p in to_ask(ledger, today):
+        if not (p.rule and p.proof_tool) or ledger.day_report(p.id, today) is not None:
+            continue
+        try:
+            result = fetch(p.proof_tool, json.loads(p.proof_args) if p.proof_args else {})
+        except Exception:  # a missing or failing tool is never a miss: the model may try it
+            failed.append(p.id)
+            continue
+        if not isinstance(result, str) or '"error"' in result[:200]:
+            failed.append(p.id)
+            continue
+        _prove_by_rule(ledger, p, [(p.proof_tool, result)], today)
+    return failed
 
 
 def _question(p: Promise) -> str:

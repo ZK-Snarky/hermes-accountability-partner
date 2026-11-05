@@ -9,14 +9,13 @@ receipts instead of just taking your word for it.
   `✅❌` or `all done`.
 - **Receipts from whatever you've connected.** A promise can say where proof lives and what counts,
   in your words: "a workout on my WHOOP counts", "a commit to my repo on GitHub", "a Strava run over
-  5k", "a visit to the gym" from a location tool. Before
-  each check-in, Hermes looks with your connected tools (any MCP server or plugin) and marks what it
-  can prove. It only asks you about the rest.
-- **Your rule, checked by code.** Say what counts ("a 30-minute WHOOP workout counts") and the
-  plugin saves it as a rule (`minutes >= 30`) on that tool's data. At check-in Hermes fetches the
-  data and the plugin, not the model, decides. If the data falls short or is missing, nothing is
-  marked missed: you're asked, and the check-in shows what the tool saw. The plugin knows nothing about any one service: it works
-  with whatever your Hermes can already reach.
+  5k", "a visit to the gym" from a location tool. It works with any MCP server or plugin your Hermes
+  can already reach, and knows nothing about any one service.
+- **Your rule, checked by code.** "A 30-minute WHOOP workout counts" is saved as a rule
+  (`minutes >= 30`) on that tool's data. At check-in the plugin fetches the data itself and checks
+  the rule: the model doesn't fetch or decide. If the data falls short or is missing, nothing is
+  marked missed: you're asked, and the check-in shows what the tool saw. Promises without a rule
+  get receipts the agent finds and quotes, checked against what the tool really returned.
 - **Consequences that actually happen.** "If I miss the gym, send $20 to charity from my wallet" or
   "block Instagram for a day." On a miss, Hermes carries it out with whatever you've connected: an
   agent wallet, a Screen Time or app-blocking tool, anything with a tool. It only counts as done when
@@ -106,9 +105,13 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
   session in memory for 30 minutes. Only the short evidence quote of a receipt is written to disk.
 - The `pre_tool_call` hook sees tool arguments, but only acts on calls to a tool named as a promise's
   enforcer while a consequence is owed.
-- No network calls, no shell commands, no background threads, no secrets, no telemetry.
-  The plugin never calls your connected tools itself; the agent does, through Hermes, with your
-  normal approvals. The schedules are ordinary Hermes cron jobs that you turn on yourself.
+- At check-in, for a promise with a rule, the plugin calls the one read-only proof tool you named
+  (e.g. your WHOOP workouts) with the arguments saved on that promise, through Hermes
+  (`ctx.dispatch_tool`, so your normal approvals apply), and checks the rule on the result. Tools
+  that act (terminal, file writes, messaging, the consequence tool) are refused as proof tools.
+  It calls nothing else; consequences are carried out by the agent, through Hermes's approvals.
+- No network calls of its own, no shell commands, no background threads, no secrets, no
+  telemetry. The schedules are ordinary Hermes cron jobs that you turn on yourself.
 
 ## Develop
 
