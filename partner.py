@@ -21,6 +21,7 @@ SILENT = "[SILENT]"
 def _norm(text: str) -> str:
     text = (text or "").lower().replace("’", "'").replace("“", '"').replace("”", '"')
     text = re.sub(r"[^\w\s'$%:/+-]", " ", text)
+    text = text.replace(":", " : ")  # so compact and spaced JSON match: "a":1 and "a": 1
     return " ".join(text.split())
 
 

@@ -303,3 +303,10 @@ def test_nothing_recorded_before_a_promise_starts(ledger):
     out = partner.record(ledger, {"results": [{"id": p["id"], "kept": True}], "user_quote": "yes"},
                          "yes", MON)
     assert out["ok"] is False and ledger.day_report(p["id"], MON) is None
+
+
+def test_compact_json_quote_matches_spaced_tool_output():
+    result = '{"status": "sent", "amount": 20, "ok": true, "tx": "test_e84c91ad92"}'
+    quote = '{"status":"sent","amount":20,"ok":true,"tx":"test_e84c91ad92"}'
+    assert partner._tool_said("wallet_send", quote, [("wallet_send", result)]) is None
+    assert partner._tool_said("wallet_send", '"amount":25', [("wallet_send", result)]) is not None
