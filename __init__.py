@@ -1,4 +1,4 @@
-"""DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts,
+"""DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts, today's place visits,
 and the agent's test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
@@ -44,6 +44,13 @@ def _whoop(args, **_):
          "avg_hr": 151}]})
 
 
+def _places(args, **_):
+    today = _today().isoformat()
+    return json.dumps({"source": "Location history", "date": today, "visits": [
+        {"place": "Library", "arrived": f"{today}T13:05:00", "minutes": 72},
+        {"place": "Cafe", "arrived": f"{today}T15:20:00", "minutes": 25}]})
+
+
 def _send(args, **_):
     return json.dumps({"status": "sent", "mode": "TEST (no real money)",
                        "amount": args.get("amount"), "to": args.get("to"),
@@ -60,6 +67,10 @@ def register(ctx):
     ctx.register_tool(name="demo_whoop_workouts_today", toolset="demo", handler=_whoop,
                       description="DEMO: list today's workouts from WHOOP.", schema={
         "name": "demo_whoop_workouts_today", "description": "DEMO: list today's workouts from WHOOP.",
+        "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="demo_location_visits_today", toolset="demo", handler=_places,
+                      description="DEMO: list today's place visits from location history.", schema={
+        "name": "demo_location_visits_today", "description": "DEMO: list today's place visits from location history.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
     ctx.register_tool(name="demo_agent_wallet_send", toolset="demo", handler=_send,
                       description="DEMO agent wallet, test mode: the agent pays from it (no real money moves).", schema={
