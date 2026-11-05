@@ -180,7 +180,33 @@ def _drop(args: dict, session_id: str = "", **_: Any) -> str:
 
 
 def _record(args: dict, session_id: str = "", **_: Any) -> str:
-    return _json(partner.record(ledger(), args, _users_words(session_id), today()))
+    """A 'kept' for today on a promise with a rule checks the data first, when the user allowed
+    its tool: met, it's proven by the data; not met, the reading goes back with the answer."""
+    led, day = ledger(), today()
+    checked, rest = [], []
+    for item in args.get("results") or []:
+        p = None
+        if item.get("kept") and (args.get("day") or "today") == "today":
+            try:
+                p = led.get(int(item.get("id")))
+            except (KeyError, TypeError, ValueError):
+                p = None
+        if p is not None and p.rule and p.proof_tool and p.proof_tool in _allowed_tools():
+            try:
+                fresh = _fetch(p.proof_tool, json.loads(p.proof_args) if p.proof_args else {})
+            except Exception:
+                fresh = None
+            if fresh is not None:
+                result = partner.prove(led, {"id": p.id}, [(p.proof_tool, fresh)], day)
+                checked.append(result)
+                if result.get("ok"):
+                    continue
+        rest.append(item)
+    out = (partner.record(led, {**args, "results": rest}, _users_words(session_id), day)
+           if rest else {"ok": True})
+    if checked:
+        out["checked_data"] = checked
+    return _json(out)
 
 
 def _prove(args: dict, session_id: str = "", **_: Any) -> str:

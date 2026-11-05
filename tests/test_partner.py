@@ -512,3 +512,30 @@ def test_the_plugin_calls_only_tools_the_user_allowed(tmp_path, monkeypatch):
     assert "✓ Work out" in json.loads(plugin._checkin({}))["message"] and ctx.calls == [WHOOP]
     plugin._promises_command(f"disallow {WHOOP}")
     assert ctx.settings["proof_tools"] == []
+
+
+def test_a_claimed_done_checks_the_data_first(tmp_path, monkeypatch):
+    import json
+    import accountability_partner as plugin
+    readings = {"m": 18}
+
+    class Ctx:
+        def get_config(self, key, default=None):
+            return [WHOOP] if key == "proof_tools" else default
+
+        def dispatch_tool(self, name, args):
+            return _whoop(readings["m"])
+    monkeypatch.setattr(plugin, "_ctx", Ctx())
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(plugin, "_ledger", None)
+    plugin.on_pre_llm_call(session_id="s", user_message="I'll work out every day")
+    pid = json.loads(plugin._add({"what": "Work out", "cadence": "daily", "user_quote": "work out every day",
+                                  "proof_tool": WHOOP, "rule": "minutes >= 30"}, session_id="s"))["id"]
+    plugin.on_pre_llm_call(session_id="s", user_message="I basically worked out, mark it done")
+    out = json.loads(plugin._record({"results": [{"id": pid, "kept": True}],
+                                     "user_quote": "I basically worked out"}, session_id="s"))
+    assert not out["ok"] and "minutes 18" in out["checked_data"][0]["not_proven"]
+    readings["m"] = 45
+    out = json.loads(plugin._record({"results": [{"id": pid, "kept": True}],
+                                     "user_quote": "I basically worked out"}, session_id="s"))
+    assert out["ok"] and out["checked_data"][0]["evidence"] == "minutes 45"
