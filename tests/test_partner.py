@@ -177,3 +177,22 @@ def test_receipts_counted_in_weekly_receipt(ledger):
                   [("strava", "Morning Run 5.2 km 27:10")], MON)
     ledger.report(p["id"], MON + timedelta(days=2), True, "yes")
     assert "You said 3, you did 2 (1 with receipts)." in partner.weekly_report(ledger, MON + timedelta(days=2))
+
+
+def test_consequence_is_enforced_only_with_proof(ledger):
+    p = _add(ledger, "stretch daily or send $20 to charity", what="Stretch", cadence="daily",
+             consequence="send $20 to charity from my wallet", user_quote="stretch daily")
+    partner.checkin(ledger, MON)
+    line = partner.answer_from_reply(ledger, "no", MON)
+    assert "send $20 to charity" in line and "promise_enforced" in line
+    assert partner.owed(ledger, MON) == [{"id": p["id"], "what": "Stretch",
+                                          "consequence": "send $20 to charity from my wallet",
+                                          "for": MON.isoformat()}]
+    wallet = [("wallet_send", '{"status": "sent", "amount": "20.00", "tx": "0x9a3f"}')]
+    assert partner.enforced(ledger, {"id": p["id"], "source_tool": "wallet_send",
+                                     "evidence": '"tx": "0xdead"'}, wallet, MON)["ok"] is False
+    assert "not enforced yet" in partner.weekly_report(ledger, MON)
+    ok = partner.enforced(ledger, {"id": p["id"], "source_tool": "wallet_send",
+                                   "evidence": '"status": "sent", "amount": "20.00"'}, wallet, MON)
+    assert ok["ok"] and partner.owed(ledger, MON) == []
+    assert "send $20 to charity from my wallet, done ✓ (wallet send)" in partner.weekly_report(ledger, MON)

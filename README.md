@@ -12,6 +12,12 @@ receipts instead of just taking your word for it.
   each check-in, Hermes looks with your connected tools (any MCP server or plugin) and marks what it
   can prove. It only asks you about the rest. The plugin knows nothing about any one service: it works
   with whatever your Hermes can already reach.
+- **Consequences that actually happen.** "If I miss the gym, send $20 to charity from my wallet" or
+  "block Instagram for a day." On a miss, Hermes carries it out with whatever you've connected: an
+  agent wallet, a Screen Time or app-blocking tool, anything with a tool. It only counts as done when
+  that tool's result shows it (a transfer id, a block confirmation). Money and phone locks go through
+  Hermes's normal approvals like any other tool call. The plugin knows nothing about any one wallet
+  or app, so any tool can become an enforcer.
 - **An honest score.** Streaks, "2 of 3 this week", and a Sunday receipt: *you said 12, you did 9*,
   plus any consequence you chose for a miss.
 - **No fudging, enforced in code.** Only your own words (or a real receipt) add, drop or mark a
@@ -52,8 +58,9 @@ Dates follow the machine's local time. Set `TZ` for another time zone.
 | "Drop the stretching one" | Removed, with your quote on file |
 | `/promises` | Your promises and this week's score, no model call |
 
-A weekly goal's consequence is named in the Sunday receipt, when the week is actually missed, not
-on the night of a single skip. Daily, weekday and one-time promises name it on the night.
+A weekly goal's consequence comes due on Sunday, when the week is actually missed, not on the night
+of a single skip. Daily, weekday and one-time promises come due on the night of the miss. The Sunday
+receipt lists each one as "done ✓" (with the tool that did it) or "not enforced yet".
 
 To mark something kept, the quote must be in the user's message and can't be preceded or carried by
 a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted into a "done".
@@ -64,6 +71,7 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
 | --- | --- | --- |
 | `promise_add` | tool | Save a promise. Needs `user_quote` from the user's current message. |
 | `promise_prove` | tool | Mark a promise kept from a tool's result. The evidence must be text that tool returned this session. |
+| `promise_enforced` | tool | Record that a missed promise's consequence was carried out. The evidence must be text the tool that did it returned this session. |
 | `promise_record` | tool | Mark promises kept or missed today or yesterday. Needs `user_quote`. |
 | `promise_drop` | tool | Drop a promise. Needs `user_quote`. |
 | `promise_list` | tool | Promises with this week's score. |

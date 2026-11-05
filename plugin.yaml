@@ -1,11 +1,12 @@
 name: accountability-partner
-version: "0.2.0"
-description: "Holds you to what you said, in your own words: saves your promises, checks in each night, takes a one-tap answer, marks things done from real receipts in your connected tools, and keeps an honest score the agent can't fudge."
+version: "0.3.0"
+description: "Holds you to what you said, in your own words: saves your promises, checks in each night, takes a one-tap answer, marks things done from real receipts in your connected tools, enforces the consequence you chose through them, and keeps an honest score the agent can't fudge."
 author: ZK-Snarky
 requires_hermes: ">=0.22.5"
 provides_tools:
   - promise_add
   - promise_prove
+  - promise_enforced
   - promise_record
   - promise_drop
   - promise_list

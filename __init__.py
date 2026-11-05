@@ -154,6 +154,10 @@ def _prove(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.prove(ledger(), args, _results_this_session(session_id), today()))
 
 
+def _enforced(args: dict, session_id: str = "", **_: Any) -> str:
+    return _json(partner.enforced(ledger(), args, _results_this_session(session_id), today()))
+
+
 def _list(args: dict, **_: Any) -> str:
     return _json(partner.listing(ledger(), today()))
 
@@ -172,7 +176,13 @@ def _checkin(args: dict, **_: Any) -> str:
 
 
 def _report(args: dict, **_: Any) -> str:
-    return _json({"message": partner.weekly_report(ledger(), today())})
+    led, day = ledger(), today()
+    out = {"message": partner.weekly_report(led, day)}
+    owe = partner.owed(led, day)
+    if owe:
+        out["enforce_now"] = owe
+        out["next"] = partner.ENFORCE_NOTE + " Then call promise_report again for the final message."
+    return _json(out)
 
 
 _QUOTE = {"type": "string", "description": (
@@ -185,7 +195,10 @@ TOOLS = [
         "cadence": {"type": "string", "enum": ["daily", "weekdays", "weekly", "once"]},
         "per_week": {"type": "integer", "description": "For weekly: times per week (1-7)."},
         "due": {"type": "string", "description": "For once: due date, YYYY-MM-DD."},
-        "consequence": {"type": "string", "description": "Only if the user named one themselves."},
+        "consequence": {"type": "string", "description": (
+            "Only if the user named one themselves: what happens on a miss, ideally something a "
+            "connected tool can carry out, e.g. 'send $20 to GiveDirectly from my wallet' or "
+            "'block Instagram for 24 hours'.")},
         "proof": {"type": "string", "description": (
             "Optional: where a connected tool can show it happened, e.g. 'Strava run today' or "
             "'GitHub commits to acme/app today'.")},
@@ -197,6 +210,13 @@ TOOLS = [
         "id": {"type": "integer"},
         "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
         "evidence": {"type": "string", "description": "Exact text from that tool's output that shows it happened."},
+    }, ["id", "source_tool", "evidence"]),
+    ("promise_enforced", _enforced, (
+        "Record that a missed promise's consequence was carried out, from the result of the tool "
+        "that did it (a wallet transfer id, an app-block confirmation). evidence is checked."), {
+        "id": {"type": "integer"},
+        "source_tool": {"type": "string", "description": "The tool that carried it out."},
+        "evidence": {"type": "string", "description": "Exact text from that tool's result."},
     }, ["id", "source_tool", "evidence"]),
     ("promise_record", _record, (
         "Record the user's own word that they kept or missed promises today (or yesterday). "
@@ -259,8 +279,11 @@ def register(ctx) -> None:
         "weekly-receipt", title="Weekly receipt",
         description="Sunday evening: what you said you'd do this week, and what you did.",
         category="weekly", schedule_template="{minute} {hour} * * 0",
-        prompt_template=("Call promise_report. Send the user its message exactly as written, "
-                         "with nothing added. If the message is [SILENT], respond with [SILENT]."),
+        prompt_template=("Call promise_report and follow what it returns: if it lists enforce_now, "
+                         "carry out each consequence with the user's connected tools (normal "
+                         "approvals apply) and call promise_enforced for each one done, then call "
+                         "promise_report again. Send the user its message exactly as written, with "
+                         "nothing added. If the message is [SILENT], respond with [SILENT]."),
         slots=[{"name": "time", "type": "time", "label": "What time on Sunday?",
                 "default": "18:00", "help": "24h local time"},
                {"name": "deliver", "type": "enum", "label": "Where to deliver?",

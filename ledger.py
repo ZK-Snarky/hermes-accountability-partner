@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS reports (
     at TEXT NOT NULL,
     UNIQUE (promise_id, day)
 );
+CREATE TABLE IF NOT EXISTS enforcements (
+    id INTEGER PRIMARY KEY,
+    promise_id INTEGER NOT NULL REFERENCES promises(id),
+    period TEXT NOT NULL,
+    source TEXT NOT NULL,
+    evidence TEXT NOT NULL,
+    at TEXT NOT NULL,
+    UNIQUE (promise_id, period)
+);
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
@@ -191,6 +200,29 @@ class Ledger:
             count += 1
             day = back(day)
         return count
+
+    # --- consequences --------------------------------------------------------------------
+
+    def misses(self, promise_id: int, start: date, end: date) -> list[date]:
+        rows = self._db.execute(
+            "SELECT day FROM reports WHERE promise_id = ? AND kept = 0 AND day BETWEEN ? AND ? ORDER BY day",
+            (int(promise_id), start.isoformat(), end.isoformat())).fetchall()
+        return [date.fromisoformat(r["day"]) for r in rows]
+
+    def enforce(self, promise_id: int, period: str, source: str, evidence: str,
+                now: Optional[datetime] = None) -> None:
+        """A consequence was carried out: ``source`` tool returned ``evidence``."""
+        now = now or datetime.now()
+        self._db.execute(
+            "INSERT OR REPLACE INTO enforcements (promise_id, period, source, evidence, at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (int(promise_id), period, source, evidence, now.isoformat(timespec="seconds")))
+        self._db.commit()
+
+    def enforced(self, promise_id: int, period: str) -> Optional[str]:
+        row = self._db.execute("SELECT source FROM enforcements WHERE promise_id = ? AND period = ?",
+                               (int(promise_id), period)).fetchone()
+        return None if row is None else row["source"]
 
     # --- check-in state -------------------------------------------------------------------
 
