@@ -7,8 +7,9 @@ receipts instead of just taking your word for it.
   $20 to charity" in any chat. Hermes offers to save it, with your exact quote.
 - **A nightly check-in.** One message lists today's promises. You answer with one tap: `yes no`,
   `✅❌` or `all done`.
-- **Receipts from whatever you've connected.** A promise can say where proof lives: "GitHub commits
-  today", "a Strava run", "the gym on my calendar", "a visit to the gym" from a location tool. Before
+- **Receipts from whatever you've connected.** A promise can say where proof lives and what counts,
+  in your words: "a workout on my WHOOP counts", "a commit to my repo on GitHub", "a Strava run over
+  5k", "a visit to the gym" from a location tool. Before
   each check-in, Hermes looks with your connected tools (any MCP server or plugin) and marks what it
   can prove. It only asks you about the rest. The plugin knows nothing about any one service: it works
   with whatever your Hermes can already reach.

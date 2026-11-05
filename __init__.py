@@ -37,7 +37,8 @@ GUIDE = (
     "quoting their exact words; then say in one line what you saved. If they said when it starts "
     "(\"starting tomorrow\"), set starts. Copy any consequence in their own words, unchanged. If "
     "one of their connected tools could show it happened (a fitness app, GitHub, a calendar, a "
-    "location visit), set proof to say where to look. Only the user's own words add, drop or mark "
+    "location visit), set proof to say where to look and what counts, in the user's own rule if "
+    "they gave one (\"a workout on my WHOOP counts\"). Only the user's own words add, drop or mark "
     "a promise, or a real result from one of their tools (promise_prove); never mark one kept or "
     "missed from your own reading of their day. The ledger's numbers are the score: repeat them, "
     "don't round up, and don't add disclaimers (such as what isn't set up)."
@@ -233,8 +234,9 @@ TOOLS = [
         "max_amount": {"type": "number", "description": "For a money consequence: the most per miss."},
         "pay_to": {"type": "string", "description": "For a money consequence: the only recipient allowed."},
         "proof": {"type": "string", "description": (
-            "Optional: where a connected tool can show it happened, e.g. 'Strava run today' or "
-            "'GitHub commits to acme/app today'.")},
+            "Optional: which connected tool shows it happened and what counts as a win, in the "
+            "user's words, e.g. 'a WHOOP workout of 30+ minutes' or 'a commit to acme/app on "
+            "GitHub'.")},
         "user_quote": _QUOTE,
     }, ["what", "cadence", "user_quote"]),
     ("promise_prove", _prove, (
