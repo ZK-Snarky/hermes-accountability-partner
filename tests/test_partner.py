@@ -386,3 +386,23 @@ def test_rule_on_a_list_counts_its_items(ledger):
     two = json.dumps({"repo": "maya/side-project", "commits": [{"sha": "a"}, {"sha": "b"}]})
     out = partner.prove(ledger, {"id": pid}, [("gh", two)], day)
     assert out["ok"] and out["evidence"] == "repo maya/side-project, commits 2"
+
+
+def test_label_only_rule_is_refused_and_rules_read_back_in_words(ledger):
+    day = date(2026, 11, 9)
+    msg = "I'll push code every day, a commit to my-app counts"
+    base = {"what": "Push code", "cadence": "daily", "user_quote": msg, "proof_tool": "gh"}
+    out = partner.add(ledger, {**base, "rule": "repo = my-app"}, msg, day)
+    assert not out["ok"] and "commits >= 1" in out["error"]
+    out = partner.add(ledger, {**base, "rule": "repo = my-app and commits >= 1"}, msg, day)
+    assert out["tell_the_user"] == "It counts when gh shows repo is my-app and commits at least 1."
+
+
+def test_lock_text_quotes_a_sentence_consequence(ledger):
+    day = date(2026, 11, 9)
+    msg = "I'll push code every day. If I miss a day, send $20 to GiveDirectly. Hold me to it, lock it in"
+    pid = partner.add(ledger, {"what": "Push code", "cadence": "daily", "user_quote": msg,
+                               "consequence": "If I miss a day, send $20 to GiveDirectly",
+                               "enforcer_tool": "wallet_send", "max_amount": 20}, msg, day)["id"]
+    out = partner.lock(ledger, {"id": pid, "until": "2026-12-01", "user_quote": "lock it in"}, msg, day)
+    assert '("If I miss a day, send $20 to GiveDirectly")' in out["tell_the_user"]

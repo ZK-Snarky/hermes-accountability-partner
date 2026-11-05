@@ -56,9 +56,13 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         if not proof_tool:
             return {"ok": False, "error": "A rule needs proof_tool: the exact name of the tool whose data it checks."}
         try:
-            parse_rule(rule)
+            conds = parse_rule(rule)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        if all(op == "=" for _, op, _ in conds):
+            return {"ok": False, "error": (
+                f"'{rule}' only matches labels, so it would pass on a day when nothing happened. "
+                "Add what must have happened, e.g. 'commits >= 1' or 'minutes >= 30'.")}
     try:
         p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
@@ -78,6 +82,7 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         out["proof"] = p.proof
     if p.rule:
         out["counts_when"] = f"{p.rule} in {p.proof_tool}"
+        out["tell_the_user"] = f"It counts when {_tool_label(p.proof_tool)} shows {rule_words(p.rule)}."
     return out
 
 
@@ -102,6 +107,16 @@ def parse_rule(rule: str) -> list[tuple[str, str, object]]:
                 raise ValueError(f"{field} {op} needs a number, not {value!r}.") from None
         conds.append((field, "=" if op == "==" else op, value))
     return conds
+
+
+_OP_WORDS = {">=": "at least", ">": "more than", "<=": "at most", "<": "less than",
+             "=": "is", "contains": "contains"}
+
+
+def rule_words(rule: str) -> str:
+    """'repo = my-app and commits >= 1' -> 'repo is my-app and commits at least 1'"""
+    return " and ".join(f"{f} {_OP_WORDS[op]} {want:g}" if isinstance(want, float)
+                        else f"{f} {_OP_WORDS[op]} {want}" for f, op, want in parse_rule(rule))
 
 
 def _records(data):
@@ -189,8 +204,8 @@ def lock(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dic
     return {"ok": True, "locked": p.label(), "until": p.locked_until, "cool_off_hours": 24,
             "tell_the_user": (
                 f"Locked until {p.locked_until}. For 24 hours you can still undo it; after that it "
-                f"can't be dropped or softened. On a miss, Hermes will {p.consequence} with "
-                f"{p.enforcer} without asking again"
+                f"can't be dropped or softened. On a miss, Hermes carries out your consequence "
+                f"(\"{p.consequence}\") with {p.enforcer} without asking again"
                 + (f", never more than {p.max_amount:g} per miss" if p.max_amount else "")
                 + (f", only to {p.pay_to}" if p.pay_to else "")
                 + f". Give {p.enforcer} a standing OK in Hermes (choose 'always' when it first asks).")}
