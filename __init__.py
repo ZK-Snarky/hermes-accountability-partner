@@ -1,5 +1,5 @@
-"""DEMO ONLY. Two stand-in tools for filming: today's commits on a sample repo, and a test-mode
-wallet that moves no money. Nothing here touches the network.
+"""DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts,
+and a test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
 Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
@@ -35,6 +35,13 @@ def _commits(args, **_):
     ]})
 
 
+def _whoop(args, **_):
+    today = _today().isoformat()
+    return json.dumps({"source": "WHOOP", "date": today, "workouts": [
+        {"sport": "Running", "start": f"{today}T07:12:00", "minutes": 42, "strain": 11.8,
+         "avg_hr": 151}]})
+
+
 def _send(args, **_):
     return json.dumps({"status": "sent", "mode": "TEST (no real money)",
                        "amount": args.get("amount"), "to": args.get("to"),
@@ -48,6 +55,10 @@ def register(ctx):
                       description="DEMO: list today's commits on a GitHub repo.", schema={
         "name": "demo_github_commits_today", "description": "DEMO: list today's commits on a GitHub repo.",
         "parameters": {"type": "object", "properties": {"repo": {"type": "string"}}, "required": []}})
+    ctx.register_tool(name="demo_whoop_workouts_today", toolset="demo", handler=_whoop,
+                      description="DEMO: list today's workouts from WHOOP.", schema={
+        "name": "demo_whoop_workouts_today", "description": "DEMO: list today's workouts from WHOOP.",
+        "parameters": {"type": "object", "properties": {}, "required": []}})
     ctx.register_tool(name="demo_wallet_send", toolset="demo", handler=_send,
                       description="DEMO test-mode wallet: send money (no real money moves).", schema={
         "name": "demo_wallet_send", "description": "DEMO test-mode wallet: send money (no real money moves).",
