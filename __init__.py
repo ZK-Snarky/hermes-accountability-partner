@@ -3,7 +3,7 @@ and a test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
 Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
-lock cool-off, stay real. Unset, everything uses the real date."""
+lock cool-off, stay real. Unset, everything uses the real date. DEMO_GITHUB_EMPTY=1 films a day with no commits."""
 
 import json
 import os
@@ -29,6 +29,8 @@ def _set_clock(**_):
 def _commits(args, **_):
     repo = args.get("repo") or "maya/side-project"
     today = _today().isoformat()
+    if os.environ.get("DEMO_GITHUB_EMPTY"):  # film a day with nothing pushed
+        return json.dumps({"repo": repo, "date": today, "commits": []})
     return json.dumps({"repo": repo, "date": today, "commits": [
         {"sha": "4f2c9a1", "message": "Add streak badge to the dashboard", "time": f"{today}T19:42:10"},
         {"sha": "b81e03d", "message": "Fix timezone bug in reminders", "time": f"{today}T20:15:33"},
