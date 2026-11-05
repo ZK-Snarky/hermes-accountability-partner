@@ -44,12 +44,16 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
     refused = _need_words(args.get("user_quote", ""), message)
     if refused:
         return refused
+    if args.get("consequence") and not said(args["consequence"], message):
+        return {"ok": False, "error": (
+            "consequence must be the user's own words, copied exactly from their message. Don't "
+            "reword or add to it; leave it out if they didn't name one.")}
     try:
         p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
                        consequence=args.get("consequence"), proof=args.get("proof"),
                        enforcer=args.get("enforcer_tool"), max_amount=args.get("max_amount"),
-                       pay_to=args.get("pay_to"),
+                       pay_to=args.get("pay_to"), starts=args.get("starts") or None,
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -111,8 +115,15 @@ def drop(ledger: Ledger, args: dict, message: Optional[str]) -> dict:
     return {"ok": True, "dropped": p.label()}
 
 
+_HEDGE_WORDS = re.compile(r"\b(basically|kind of|kinda|sort of|sorta|mostly|pretty much|almost|"
+                          r"nearly|probably|i think|technically|more or less|half|partly|ish)\b")
 _NO_WORDS = re.compile(r"\b(didn't|didnt|did not|not|never|no|skip|skipped|missed|couldn't|couldnt|"
                        r"won't|wont|failed)\b")
+
+
+def _current(message: Optional[str]) -> str:
+    """The newest message when the hook passed the last two joined by a newline."""
+    return (message or "").split("\n")[-1]
 
 
 def _negated(quote: str, message: str) -> bool:
@@ -126,7 +137,12 @@ def record(ledger: Ledger, args: dict, message: Optional[str], today: date) -> d
     refused = _need_words(args.get("user_quote", ""), message)
     if refused:
         return refused
-    if any(item.get("kept") for item in args.get("results") or []) and _negated(args["user_quote"], message):
+    wants_kept = any(item.get("kept") for item in args.get("results") or [])
+    if wants_kept and _HEDGE_WORDS.search(_norm(_current(message))):
+        return {"ok": False, "error": (
+            "The user hedged ('basically', 'mostly', 'kind of'...). A hedge isn't a yes: ask them "
+            "plainly whether they did it, and record their answer.")}
+    if wants_kept and _negated(args["user_quote"], message):
         return {"ok": False, "error": (
             "The quoted words say 'didn't'/'not'/'skipped', so they can't mark anything kept. "
             "Ask the user plainly whether they did it.")}
@@ -168,7 +184,7 @@ def to_ask(ledger: Ledger, today: date) -> list[Promise]:
     """Tonight's questions: every daily promise, weekly ones not yet met, one-time ones now due."""
     out = []
     for p in ledger.active():
-        if date.fromisoformat(p.created[:10]) > today:
+        if p.first_day() > today:
             continue
         if p.cadence == "daily" or (p.cadence == "weekdays" and today.weekday() < 5):
             out.append(p)
@@ -398,7 +414,7 @@ def weekly_report(ledger: Ledger, today: date) -> str:
     said_n = did_n = proven_n = 0
     consequences = []
     for p in ledger.active(include_finished=True):
-        created = date.fromisoformat(p.created[:10])
+        created = p.first_day()
         if p.cadence in ("daily", "weekdays"):
             window = [d for d in days if d >= created
                       and (p.cadence == "daily" or d.weekday() < 5)]

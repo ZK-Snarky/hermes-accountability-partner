@@ -1,5 +1,5 @@
 name: accountability-partner
-version: "0.4.0"
+version: "0.5.0"
 description: "Holds you to what you said, in your own words: saves your promises, checks in each night, takes a one-tap answer, marks things done from real receipts in your connected tools, enforces the consequence you chose through them, and keeps an honest score the agent can't fudge."
 author: ZK-Snarky
 requires_hermes: ">=0.22.5"

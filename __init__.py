@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from datetime import date
@@ -25,18 +26,21 @@ _RECENT_SECONDS = 15 * 60
 _lock = threading.Lock()
 _ledger: Optional[Ledger] = None
 _ledger_path: Optional[Path] = None
-_last_said: dict[str, tuple[str, float]] = {}  # session id -> (user's message, when)
+_last_said: dict[str, list[tuple[str, float]]] = {}  # session id -> last 2 (user's message, when)
 _seen: dict[str, list[tuple[str, str, float]]] = {}  # session id -> [(tool, result text, when)]
 _SEEN_PER_SESSION = 40
 _RESULT_CHARS = 20000
 
 GUIDE = (
     "Accountability Partner is on. When the user commits to something (\"I'll...\", \"I'm going "
-    "to...\", \"every day I...\"), offer to save it with promise_add, quoting their exact words. "
-    "If one of the user's connected tools could show it happened (a run in a fitness app, commits "
-    "on GitHub, a calendar event, a location visit), set proof to say where to look. "
-    "Only the user's own words add, drop or mark a promise, or a real result from one of their "
-    "tools (promise_prove); never mark one kept or missed from your own reading of their day. The ledger's numbers are the score: repeat them, don't round up."
+    "to...\", \"every day I...\"), save it right away with promise_add, no need to ask first, "
+    "quoting their exact words; then say in one line what you saved. If they said when it starts "
+    "(\"starting tomorrow\"), set starts. Copy any consequence in their own words, unchanged. If "
+    "one of their connected tools could show it happened (a fitness app, GitHub, a calendar, a "
+    "location visit), set proof to say where to look. Only the user's own words add, drop or mark "
+    "a promise, or a real result from one of their tools (promise_prove); never mark one kept or "
+    "missed from your own reading of their day. The ledger's numbers are the score: repeat them, "
+    "don't round up, and don't add disclaimers."
 )
 
 
@@ -45,8 +49,12 @@ def _data_dir() -> Path:
         from plugins.plugin_storage import plugin_data_dir
         return plugin_data_dir(PLUGIN)
     except ImportError:  # older Hermes without the storage helper
-        from hermes_constants import get_hermes_home
-        path = get_hermes_home() / "plugin-data" / PLUGIN
+        try:
+            from hermes_constants import get_hermes_home
+            home = get_hermes_home()
+        except ImportError:
+            home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+        path = Path(home) / "plugin-data" / PLUGIN
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -67,15 +75,17 @@ def today() -> date:
 
 
 def _users_words(session_id: Optional[str]) -> Optional[str]:
-    """The user's current message: the one this turn started from."""
+    """The user's current message, plus the one before it (so "yes, save it" can confirm a promise
+    they spelled out a moment ago). Only messages from the last 15 minutes count."""
     now = time.time()
     if session_id and session_id in _last_said:
-        text, at = _last_said[session_id]
-        return text if now - at < _RECENT_SECONDS else None
-    if _last_said:  # no session id passed: the newest message, if it is recent
-        text, at = max(_last_said.values(), key=lambda v: v[1])
-        return text if now - at < _RECENT_SECONDS else None
-    return None
+        rows = _last_said[session_id]
+    elif _last_said:  # no session id passed: the newest session's messages
+        rows = max(_last_said.values(), key=lambda r: r[-1][1])
+    else:
+        return None
+    recent = [text for text, at in rows if now - at < _RECENT_SECONDS]
+    return "\n".join(recent) or None
 
 
 def _json(value: Any) -> str:
@@ -103,9 +113,11 @@ def on_pre_llm_call(session_id: str = "", user_message: Any = None,
                     conversation_history: Any = None, **_: Any):
     text = user_message if isinstance(user_message, str) else ""
     if session_id and text:
-        _last_said[session_id] = (text, time.time())
+        rows = _last_said.setdefault(session_id, [])
+        rows.append((text, time.time()))
+        del rows[:-2]
         if len(_last_said) > 200:
-            oldest = min(_last_said, key=lambda k: _last_said[k][1])
+            oldest = min(_last_said, key=lambda k: _last_said[k][-1][1])
             _last_said.pop(oldest, None)
     if not text or _last_agent_question(conversation_history):
         return None
@@ -209,8 +221,10 @@ TOOLS = [
         "cadence": {"type": "string", "enum": ["daily", "weekdays", "weekly", "once"]},
         "per_week": {"type": "integer", "description": "For weekly: times per week (1-7)."},
         "due": {"type": "string", "description": "For once: due date, YYYY-MM-DD."},
+        "starts": {"type": "string", "description": "First day it counts, YYYY-MM-DD, if the user said (e.g. 'starting tomorrow'). Default today."},
         "consequence": {"type": "string", "description": (
-            "Only if the user named one themselves: what happens on a miss, ideally something a "
+            "Only if the user named one themselves, copied in their own words: what happens on a "
+            "miss, ideally something a "
             "connected tool can carry out, e.g. 'send $20 to GiveDirectly from my wallet' or "
             "'block Instagram for 24 hours'.")},
         "enforcer_tool": {"type": "string", "description": (

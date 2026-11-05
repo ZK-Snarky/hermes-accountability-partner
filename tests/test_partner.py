@@ -123,7 +123,7 @@ def test_weekdays_skip_the_weekend(ledger):
 
 def test_weekly_day_miss_names_no_consequence(ledger):
     _add(ledger, "gym 3x a week or I owe $20", what="Gym", cadence="weekly", per_week=3,
-         consequence="$20", user_quote="gym 3x a week")
+         consequence="I owe $20", user_quote="gym 3x a week")
     partner.checkin(ledger, MON)
     assert "$20" not in partner.answer_from_reply(ledger, "no", MON)
 
@@ -180,8 +180,8 @@ def test_receipts_counted_in_weekly_receipt(ledger):
 
 
 def test_consequence_is_enforced_only_with_proof(ledger):
-    p = _add(ledger, "stretch daily or send $20 to charity", what="Stretch", cadence="daily",
-             consequence="send $20 to charity from my wallet", user_quote="stretch daily")
+    p = _add(ledger, "stretch daily or send $20 to charity from my wallet", what="Stretch",
+             cadence="daily", consequence="send $20 to charity from my wallet", user_quote="stretch daily")
     partner.checkin(ledger, MON)
     line = partner.answer_from_reply(ledger, "no", MON)
     assert "send $20 to charity" in line and "promise_enforced" in line
@@ -243,12 +243,44 @@ def test_guard_holds_the_wallet_to_the_rails(ledger):
     assert partner.owed(ledger, today)[-1]["locked_in"] is True
 
 
-def test_tools_reach_the_real_ledger(tmp_path, monkeypatch):
-    """Nov 4 2026: the promise_lock handler was named _lock and replaced the module's
-    threading lock, so every tool call in a live Hermes failed with "'function' object does
-    not support the context manager protocol". Go through the real ledger() wiring."""
+def test_consequence_must_be_the_users_words(ledger):
+    msg = "gym 3x a week. If I miss the gym, send $20 to GiveDirectly."
+    out = _add(ledger, msg, what="Gym", cadence="weekly", per_week=3, user_quote="gym 3x a week",
+               consequence="$20 for each workout short of three")
+    assert out["ok"] is False and ledger.active() == []
+
+
+def test_hedge_is_not_a_yes(ledger):
+    p = _add(ledger, "gym 3x a week", what="Gym", cadence="weekly", per_week=3,
+             user_quote="gym 3x a week")
+    out = partner.record(ledger, {"results": [{"id": p["id"], "kept": True}],
+                                  "user_quote": "did the gym"}, "I basically did the gym, just mark it done", MON)
+    assert out["ok"] is False and "hedge" in out["error"]
+
+
+def test_starts_tomorrow_isnt_asked_tonight(ledger):
+    p = _add(ledger, "Starting tomorrow I'll stretch daily", what="Stretch", cadence="daily",
+             starts=(MON + timedelta(days=1)).isoformat(), user_quote="I'll stretch daily")
+    assert p["saved"] == "Stretch (daily, from Nov 3)"
+    assert partner.checkin(ledger, MON) == partner.SILENT
+    assert partner.to_ask(ledger, MON + timedelta(days=1))
+
+
+def test_yes_confirms_the_promise_said_just_before(ledger):
+    two = "gym 3x a week, every week\nyes, save it"
+    assert _add(ledger, two, what="Gym", cadence="weekly", per_week=3, user_quote="gym 3x a week")["ok"]
+
+
+def test_tools_work_through_the_real_ledger_setup(tmp_path, monkeypatch):
+    """The plugin's own handlers, not just partner.py: catches wiring bugs like a name clash."""
+    import json
     import accountability_partner as plugin
-    monkeypatch.setattr(plugin, "_data_dir", lambda: tmp_path)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setattr(plugin, "_ledger", None)
-    assert isinstance(plugin.ledger(), Ledger)
-    assert "No promises yet" in plugin._list({})
+    plugin.on_pre_llm_call(session_id="s", user_message="I'll read 10 pages every day")
+    out = json.loads(plugin._add({"what": "Read", "cadence": "daily",
+                                  "user_quote": "read 10 pages every day"}, session_id="s"))
+    assert out["ok"], out
+    for _name, handler, *_ in plugin.TOOLS:
+        json.loads(handler({}, session_id="s"))  # every tool answers, none crashes
+    assert "Read" in plugin._promises_command("")

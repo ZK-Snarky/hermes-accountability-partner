@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS promises (
     pay_to TEXT,
     locked_until TEXT,
     locked_at TEXT,
+    starts TEXT,
     quote TEXT NOT NULL,
     created TEXT NOT NULL,
     dropped TEXT,
@@ -72,13 +73,27 @@ class Promise:
     pay_to: Optional[str] = None
     locked_until: Optional[str] = None
     locked_at: Optional[str] = None
+    starts: Optional[str] = None
+
+    def _from(self) -> str:
+        return _from_label(self)
+
+    def first_day(self) -> date:
+        return date.fromisoformat(self.starts or self.created[:10])
 
     def label(self) -> str:
         if self.cadence in ("daily", "weekdays"):
-            return f"{self.what} ({self.cadence})"
+            return f"{self.what} ({self.cadence}{self._from()})"
         if self.cadence == "weekly":
-            return f"{self.what} ({self.per_week}x a week)"
+            return f"{self.what} ({self.per_week}x a week{self._from()})"
         return f"{self.what} (by {self.due})" if self.due else f"{self.what} (once)"
+
+
+def _from_label(p: "Promise") -> str:
+    if not p.starts or date.fromisoformat(p.starts) <= date.fromisoformat(p.created[:10]):
+        return ""
+    d = date.fromisoformat(p.starts)
+    return f", from {d.strftime('%b')} {d.day}"
 
 
 def week_start(day: date) -> date:
@@ -93,7 +108,19 @@ class Ledger:
         self._db = sqlite3.connect(str(self.path), check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._add_new_columns()
         self._db.commit()
+
+    def _add_new_columns(self) -> None:
+        """Ledgers made by an older version get the newer columns (all optional)."""
+        have = {r["name"] for r in self._db.execute("PRAGMA table_info(promises)")}
+        for col, kind in (("proof", "TEXT"), ("enforcer", "TEXT"), ("max_amount", "REAL"),
+                          ("pay_to", "TEXT"), ("locked_until", "TEXT"), ("locked_at", "TEXT"),
+                          ("starts", "TEXT")):
+            if col not in have:
+                self._db.execute(f"ALTER TABLE promises ADD COLUMN {col} {kind}")
+        if "source" not in {r["name"] for r in self._db.execute("PRAGMA table_info(reports)")}:
+            self._db.execute("ALTER TABLE reports ADD COLUMN source TEXT")
 
     # --- promises -------------------------------------------------------------------------
 
@@ -101,7 +128,7 @@ class Ledger:
             due: Optional[str] = None, consequence: Optional[str] = None,
             proof: Optional[str] = None, enforcer: Optional[str] = None,
             max_amount: Optional[float] = None, pay_to: Optional[str] = None,
-            now: Optional[datetime] = None) -> Promise:
+            starts: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
         what = " ".join((what or "").split())
         if not what:
             raise ValueError("say what the promise is")
@@ -111,14 +138,16 @@ class Ledger:
             raise ValueError("per_week must be 1 to 7")
         if due:
             date.fromisoformat(due)  # raises on a bad date
+        if starts:
+            date.fromisoformat(starts)
         now = now or datetime.now()
         cur = self._db.execute(
             "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, enforcer,"
-            " max_amount, pay_to, quote, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " max_amount, pay_to, starts, quote, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (what, cadence, int(per_week) if cadence == "weekly" else 1, due,
              (consequence or "").strip() or None, (proof or "").strip() or None,
              (enforcer or "").strip() or None, float(max_amount) if max_amount else None,
-             (pay_to or "").strip() or None, quote, now.isoformat(timespec="seconds")))
+             (pay_to or "").strip() or None, starts or None, quote, now.isoformat(timespec="seconds")))
         self._db.commit()
         return self.get(cur.lastrowid)
 
@@ -288,4 +317,5 @@ def _promise(row: sqlite3.Row) -> Promise:
                    per_week=row["per_week"], due=row["due"], consequence=row["consequence"],
                    proof=row["proof"], enforcer=row["enforcer"], max_amount=row["max_amount"],
                    pay_to=row["pay_to"], locked_until=row["locked_until"], locked_at=row["locked_at"],
+                   starts=row["starts"],
                    quote=row["quote"], created=row["created"])
