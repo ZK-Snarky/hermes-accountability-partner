@@ -371,3 +371,18 @@ def test_bad_rule_or_missing_tool_is_refused(ledger):
     assert not partner.add(ledger, {**base, "rule": "minutes >= 30"}, msg, day)["ok"]
     assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "rule": "lots of minutes"}, msg, day)["ok"]
     assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "rule": "minutes >= thirty"}, msg, day)["ok"]
+
+
+def test_rule_on_a_list_counts_its_items(ledger):
+    import json
+    day = date(2026, 11, 9)
+    msg = "I'll push code every day, a commit to maya/side-project counts"
+    pid = partner.add(ledger, {"what": "Push code", "cadence": "daily", "user_quote": msg,
+                               "proof_tool": "gh", "rule": "repo = maya/side-project and commits >= 1"},
+                      msg, day)["id"]
+    none = json.dumps({"repo": "maya/side-project", "commits": []})
+    out = partner.prove(ledger, {"id": pid}, [("gh", none)], day)
+    assert not out["ok"] and "commits 0" in out["not_proven"] and "[" not in out["not_proven"]
+    two = json.dumps({"repo": "maya/side-project", "commits": [{"sha": "a"}, {"sha": "b"}]})
+    out = partner.prove(ledger, {"id": pid}, [("gh", two)], day)
+    assert out["ok"] and out["evidence"] == "repo maya/side-project, commits 2"

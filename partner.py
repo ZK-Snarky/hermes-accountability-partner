@@ -122,7 +122,16 @@ def _records(data):
             yield from _records(v)
 
 
+def _shown(value) -> str:
+    """A list reads as its count ('commits 2'), never its raw contents."""
+    if isinstance(value, (list, tuple, dict)):
+        return str(len(value))
+    return str(value)
+
+
 def _meets(value, op, want) -> bool:
+    if isinstance(value, (list, tuple, dict)) and op in (">=", "<=", ">", "<", "="):
+        value = len(value)  # 'commits >= 1' counts the items
     if op in (">=", "<=", ">", "<"):
         try:
             v = float(value)
@@ -145,8 +154,8 @@ def check_rule(rule: str, results: list[str]) -> tuple[Optional[str], Optional[s
             if not any(f in fields for f, _, _ in conds):
                 continue
             if all(f in fields and _meets(fields[f], op, want) for f, op, want in conds):
-                return ", ".join(f"{f} {fields[f]}" for f, _, _ in conds), None
-            seen.append(", ".join(f"{f} {fields[f]}" for f, _, _ in conds if f in fields))
+                return ", ".join(f"{f} {_shown(fields[f])}" for f, _, _ in conds), None
+            seen.append(", ".join(f"{f} {_shown(fields[f])}" for f, _, _ in conds if f in fields))
     return None, ("; ".join(dict.fromkeys(seen)) if seen else None)
 
 
