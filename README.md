@@ -13,7 +13,7 @@ receipts instead of just taking your word for it.
   can already reach, and knows nothing about any one service.
 - **Your rule, checked by code.** "A 30-minute WHOOP workout counts" is saved as a rule
   (`minutes >= 30`) on that tool's data. At check-in the plugin fetches the data itself and checks
-  the rule: the model doesn't fetch or decide. If the data falls short or is missing, nothing is
+  the rule (for tools you allowed with `/promises allow <tool>`): the model doesn't fetch or decide. If the data falls short or is missing, nothing is
   marked missed: you're asked, and the check-in shows what the tool saw. Promises without a rule
   get receipts the agent finds and quotes, checked against what the tool really returned.
 - **Consequences that actually happen.** "If I miss the gym, send $20 to charity from my wallet" or
@@ -105,11 +105,12 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
   session in memory for 30 minutes. Only the short evidence quote of a receipt is written to disk.
 - The `pre_tool_call` hook sees tool arguments, but only acts on calls to a tool named as a promise's
   enforcer while a consequence is owed.
-- At check-in, for a promise with a rule, the plugin calls the one read-only proof tool you named
-  (e.g. your WHOOP workouts) with the arguments saved on that promise, through Hermes
-  (`ctx.dispatch_tool`, so your normal approvals apply), and checks the rule on the result. Tools
-  that act (terminal, file writes, messaging, the consequence tool) are refused as proof tools.
-  It calls nothing else; consequences are carried out by the agent, through Hermes's approvals.
+- The plugin calls a tool itself only if you allowed that tool: `/promises allow <tool>` (setting
+  `proof_tools`, empty by default, also on the plugin's Settings page). Then, at check-in, it calls
+  that tool through Hermes (`ctx.dispatch_tool`) with the arguments saved on the promise and checks
+  your rule on the result. A call that fails or is held counts as no data, never a miss. Without the
+  setting, the agent looks the data up and the plugin checks what the tool really returned. It calls
+  nothing else; consequences are carried out by the agent, through Hermes's approvals.
 - No network calls of its own, no shell commands, no background threads, no secrets, no
   telemetry. The schedules are ordinary Hermes cron jobs that you turn on yourself.
 

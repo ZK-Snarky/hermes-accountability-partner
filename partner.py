@@ -55,11 +55,11 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
     proof_args = args.get("proof_args") or None
     if proof_args is not None and not isinstance(proof_args, dict):
         return {"ok": False, "error": "proof_args must be an object of the proof tool's arguments."}
-    if proof_tool and (proof_tool.startswith("promise_") or proof_tool in NOT_PROOF_TOOLS
+    if proof_tool and (proof_tool.startswith("promise_")
                        or proof_tool == (args.get("enforcer_tool") or "").strip()):
         return {"ok": False, "error": (
-            f"{proof_tool} can't be a proof tool: use a read-only tool that shows the data, "
-            "like a fitness app's workouts or GitHub's commits.")}
+            f"{proof_tool} can't prove this promise: a promise tool can't be its own receipt, and "
+            "the tool that carries out the consequence can't also be its proof.")}
     if rule:
         if not proof_tool:
             return {"ok": False, "error": "A rule needs proof_tool: the exact name of the tool whose data it checks."}
@@ -413,15 +413,11 @@ def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) 
             "their answer with promise_record. Don't mark it yourself."}
 
 
-# Tools that act rather than read: never called as proof (the plugin calls a proof tool itself).
-NOT_PROOF_TOOLS = frozenset({
-    "terminal", "execute_code", "write_file", "patch", "delegate_task", "send_message",
-    "cronjob", "browser_navigate", "browser_click", "browser_type", "memory", "skill_manage"})
-
-
 def check_by_fetching(ledger: Ledger, today: date, fetch) -> list[int]:
     """Code, not the model, gets the data: for each promise with a rule still open tonight, call
     ``fetch(tool, args)`` (the host's tool dispatch) and check the rule on what comes back.
+    Whether a call may run is the host's decision: Hermes's own approvals gate it exactly as they
+    gate the model's calls, and a call they refuse or hold is just a failed fetch (never a miss).
     Returns the ids it couldn't fetch, so the model can try those."""
     failed = []
     for p in to_ask(ledger, today):

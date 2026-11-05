@@ -1,5 +1,5 @@
 name: accountability-partner
-version: "0.7.0"
+version: "0.7.1"
 description: "Holds you to what you said, in your own words: saves your promises, checks in each night, takes a one-tap answer, marks things done from real receipts in your connected tools, enforces the consequence you chose through them, and keeps an honest score the agent can't fudge."
 author: ZK-Snarky
 requires_hermes: ">=0.22.5"
@@ -17,3 +17,9 @@ provides_hooks:
   - pre_llm_call
   - post_tool_call
   - pre_tool_call
+config_schema:
+  proof_tools:
+    type: list
+    default: []
+    label: "Tools it may check itself"
+    description: "Tools this plugin may call by itself at check-in to fetch a rule's data (e.g. your WHOOP or GitHub read tool). Empty: the agent fetches instead. Add one with /promises allow <tool>."

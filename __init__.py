@@ -166,7 +166,13 @@ def _results_this_session(session_id: Optional[str]) -> list[tuple[str, str]]:
 # --- tools ----------------------------------------------------------------------------------
 
 def _add(args: dict, session_id: str = "", **_: Any) -> str:
-    return _json(partner.add(ledger(), args, _users_words(session_id), today()))
+    out = partner.add(ledger(), args, _users_words(session_id), today())
+    tool = (args.get("proof_tool") or "").strip()
+    if out.get("ok") and args.get("rule") and tool not in _allowed_tools():
+        out["tell_the_user_too"] = (
+            f"To let the plugin check {tool} by itself each night, type: /promises allow {tool}. "
+            "Until then I'll look it up at check-in.")
+    return _json(out)
 
 
 def _drop(args: dict, session_id: str = "", **_: Any) -> str:
@@ -217,9 +223,18 @@ def _list(args: dict, **_: Any) -> str:
 _ctx = None  # the PluginContext, for ctx.dispatch_tool
 
 
-def _fetch(tool: str, args: dict) -> str:
+def _allowed_tools() -> set:
+    """The tools the user let this plugin call itself (setting proof_tools; default none)."""
     if _ctx is None:
-        raise RuntimeError("no plugin context")
+        return set()
+    value = _ctx.get_config("proof_tools", []) or []
+    return {str(t) for t in value} if isinstance(value, (list, tuple)) else set()
+
+
+def _fetch(tool: str, args: dict) -> str:
+    """Call a proof tool for the plugin's own rule check, only if the user allowed that tool."""
+    if tool not in _allowed_tools():
+        raise PermissionError(f"{tool} isn't in proof_tools")
     return _ctx.dispatch_tool(tool, args)
 
 
@@ -340,6 +355,13 @@ TOOLS = [
 
 
 def _promises_command(raw_args: str = "") -> str:
+    words = (raw_args or "").split()
+    if len(words) == 2 and words[0] in ("allow", "disallow") and _ctx is not None:
+        tools = _allowed_tools()
+        (tools.add if words[0] == "allow" else tools.discard)(words[1])
+        _ctx.set_config("proof_tools", sorted(tools))
+        return (f"The plugin may now call {words[1]} itself at check-in to check your rules."
+                if words[0] == "allow" else f"The plugin won't call {words[1]} itself any more.")
     data = partner.listing(ledger(), today())
     if not data["promises"]:
         return "No promises yet. Tell me what you're committing to, in your own words."

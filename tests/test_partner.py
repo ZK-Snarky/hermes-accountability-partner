@@ -471,11 +471,44 @@ def test_short_data_fetched_is_asked_and_a_failing_tool_is_left_to_the_agent(led
     assert "shows minutes 18; your rule: minutes >= 30" in partner.checkin(ledger, day)
 
 
-def test_acting_tools_cant_be_proof(ledger):
+def test_a_promise_or_consequence_tool_cant_be_proof(ledger):
     day = date(2026, 11, 9)
     msg = "I'll work out every day"
     base = {"what": "Work out", "cadence": "daily", "user_quote": msg, "rule": "minutes >= 30"}
-    for tool in ("terminal", "send_message", "promise_list"):
-        assert not partner.add(ledger, {**base, "proof_tool": tool}, msg, day)["ok"]
+    assert not partner.add(ledger, {**base, "proof_tool": "promise_list"}, msg, day)["ok"]
     assert not partner.add(ledger, {**base, "proof_tool": "wallet", "enforcer_tool": "wallet"}, msg, day)["ok"]
     assert not partner.add(ledger, {**base, "proof_tool": WHOOP, "proof_args": "days=1"}, msg, day)["ok"]
+
+
+def test_the_plugin_calls_only_tools_the_user_allowed(tmp_path, monkeypatch):
+    import json
+    import accountability_partner as plugin
+
+    class Ctx:
+        def __init__(self):
+            self.settings, self.calls = {}, []
+
+        def get_config(self, key, default=None):
+            return self.settings.get(key, default)
+
+        def set_config(self, key, value):
+            self.settings[key] = value
+
+        def dispatch_tool(self, name, args):
+            self.calls.append(name)
+            return _whoop(42)
+    ctx = Ctx()
+    monkeypatch.setattr(plugin, "_ctx", ctx)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(plugin, "_ledger", None)
+    plugin.on_pre_llm_call(session_id="s", user_message="I'll work out every day")
+    out = json.loads(plugin._add({"what": "Work out", "cadence": "daily", "user_quote": "work out every day",
+                                  "proof_tool": WHOOP, "rule": "minutes >= 30"}, session_id="s"))
+    assert f"/promises allow {WHOOP}" in out["tell_the_user_too"]
+    first = json.loads(plugin._checkin({}))
+    assert ctx.calls == [] and first["prove_first"][0]["call"] == WHOOP
+    plugin._promises_command(f"allow {WHOOP}")
+    assert ctx.settings["proof_tools"] == [WHOOP]
+    assert "✓ Work out" in json.loads(plugin._checkin({}))["message"] and ctx.calls == [WHOOP]
+    plugin._promises_command(f"disallow {WHOOP}")
+    assert ctx.settings["proof_tools"] == []
