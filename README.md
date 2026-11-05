@@ -4,7 +4,7 @@ Hermes does what you ask. This plugin makes it hold you to what **you** said you
 receipts instead of just taking your word for it.
 
 - **Promises in your own words.** Say "I'll make 40 calls every weekday" or "gym 3x a week, or I owe
-  $20 to charity" in any chat. Hermes offers to save it, with your exact quote.
+  $20 to charity" in any chat. Hermes saves it, with your exact quote.
 - **A nightly check-in.** One message lists today's promises. You answer with one tap: `yes no`,
   `✅❌` or `all done`.
 - **Receipts from whatever you've connected.** A promise can say where proof lives and what counts,
