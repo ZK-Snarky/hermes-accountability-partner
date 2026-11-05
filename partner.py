@@ -64,7 +64,7 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
                 f"'{rule}' only matches labels, so it would pass on a day when nothing happened. "
                 "Add what must have happened, e.g. 'commits >= 1' or 'minutes >= 30'.")}
     try:
-        p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
+        p = ledger.add((args.get("what") or "").strip().rstrip("."), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
                        consequence=args.get("consequence"), proof=args.get("proof"),
                        enforcer=args.get("enforcer_tool"), max_amount=args.get("max_amount"),
@@ -95,6 +95,7 @@ def parse_rule(rule: str) -> list[tuple[str, str, object]]:
     """'minutes >= 30', 'sport = running and minutes >= 30', 'message contains fix'."""
     conds = []
     for part in re.split(r"\s+and\s+", (rule or "").strip(), flags=re.I):
+        part = re.sub(r"^\s*(?:len|count)\s*\(\s*([\w.]+)\s*\)", r"\1", part, flags=re.I)
         m = _COND.match(part)
         if not m:
             raise ValueError(f"Can't read the rule part {part!r}. Use 'field >= number', "
@@ -397,8 +398,9 @@ def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) 
     shown = f"{_tool_label(p.proof_tool)} shows {reading}" if reading else \
         f"{_tool_label(p.proof_tool)} has nothing for it"
     ledger.set_reading(p.id, today, f"{shown}; your rule: {p.rule}")
-    return {"ok": False, "not_proven": f"{shown}; the rule is {p.rule}. Not marked: it will be "
-            "asked at the check-in. Don't mark it yourself."}
+    return {"ok": False, "not_proven": f"{shown}; the rule is {p.rule}. Not marked. Tell the user "
+            "what the tool shows and ask them plainly: did they do it today, yes or no? Record "
+            "their answer with promise_record. Don't mark it yourself."}
 
 
 def _question(p: Promise) -> str:

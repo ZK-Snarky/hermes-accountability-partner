@@ -406,3 +406,15 @@ def test_lock_text_quotes_a_sentence_consequence(ledger):
                                "enforcer_tool": "wallet_send", "max_amount": 20}, msg, day)["id"]
     out = partner.lock(ledger, {"id": pid, "until": "2026-12-01", "user_quote": "lock it in"}, msg, day)
     assert '("If I miss a day, send $20 to GiveDirectly")' in out["tell_the_user"]
+
+
+def test_len_or_count_in_a_rule_reads_as_the_list_count():
+    assert partner.parse_rule("count(commits) >= 1") == partner.parse_rule("commits >= 1")
+    assert partner.parse_rule("len(commits) >= 1") == [("commits", ">=", 1.0)]
+
+
+def test_not_proven_tells_the_agent_to_ask_now(ledger):
+    day = date(2026, 11, 10)
+    pid = _ruled(ledger, day)
+    out = partner.prove(ledger, {"id": pid}, [(WHOOP, _whoop(18))], day)
+    assert "yes or no" in out["not_proven"] and "promise_record" in out["not_proven"]

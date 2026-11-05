@@ -221,7 +221,9 @@ _QUOTE = {"type": "string", "description": (
 
 TOOLS = [
     ("promise_add", _add, "Save a promise the user just made, in their own words.", {
-        "what": {"type": "string", "description": "Short name, e.g. 'Gym' or 'Make 40 sales calls'."},
+        "what": {"type": "string", "description": (
+            "Short name of the action, not the user's sentence: e.g. 'Gym', 'Push code to my-app', "
+            "'Make 40 sales calls'.")},
         "cadence": {"type": "string", "enum": ["daily", "weekdays", "weekly", "once"]},
         "per_week": {"type": "integer", "description": "For weekly: times per week (1-7)."},
         "due": {"type": "string", "description": "For once: due date, YYYY-MM-DD."},
@@ -245,7 +247,9 @@ TOOLS = [
         "rule": {"type": "string", "description": (
             "Optional, when the user said what counts and a tool's data can show it: a check the "
             "plugin runs on that tool's result, e.g. 'minutes >= 30', 'sport = running and "
-            "minutes >= 30', 'message contains fix'. Use the field names the tool returns.")},
+            "minutes >= 30', 'message contains fix', or for a list field 'commits >= 1' (a list "
+            "counts its items; no len() needed). Use the field names the tool returns, and "
+            "include what must have happened, not just a label.")},
         "user_quote": _QUOTE,
     }, ["what", "cadence", "user_quote"]),
     ("promise_prove", _prove, (
