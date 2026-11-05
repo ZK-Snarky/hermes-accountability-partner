@@ -154,7 +154,7 @@ def _prove(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.prove(ledger(), args, _results_this_session(session_id), today()))
 
 
-def _lock(args: dict, session_id: str = "", **_: Any) -> str:
+def _lock_in(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.lock(ledger(), args, _users_words(session_id), today()))
 
 
@@ -230,7 +230,7 @@ TOOLS = [
         "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
         "evidence": {"type": "string", "description": "Exact text from that tool's output that shows it happened."},
     }, ["id", "source_tool", "evidence"]),
-    ("promise_lock", _lock, (
+    ("promise_lock", _lock_in, (
         "Lock a promise in, only when the user explicitly asks ('lock it in', 'hold me to it'): "
         "on a miss its consequence fires without asking again, and it can't be dropped or softened "
         "until the end date (max 90 days, 24-hour cool-off first). Tell the user exactly what "

@@ -241,3 +241,14 @@ def test_guard_holds_the_wallet_to_the_rails(ledger):
     ledger.report(p["id"], today, False, "no")
     assert partner.guard(ledger, "wallet_send", {"amount": 20, "to": "GiveDirectly"}, today) is None
     assert partner.owed(ledger, today)[-1]["locked_in"] is True
+
+
+def test_tools_reach_the_real_ledger(tmp_path, monkeypatch):
+    """Nov 4 2026: the promise_lock handler was named _lock and replaced the module's
+    threading lock, so every tool call in a live Hermes failed with "'function' object does
+    not support the context manager protocol". Go through the real ledger() wiring."""
+    import accountability_partner as plugin
+    monkeypatch.setattr(plugin, "_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(plugin, "_ledger", None)
+    assert isinstance(plugin.ledger(), Ledger)
+    assert "No promises yet" in plugin._list({})
