@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS promises (
     due TEXT,
     consequence TEXT,
     proof TEXT,
+    enforcer TEXT,
+    max_amount REAL,
+    pay_to TEXT,
+    locked_until TEXT,
+    locked_at TEXT,
     quote TEXT NOT NULL,
     created TEXT NOT NULL,
     dropped TEXT,
@@ -62,6 +67,11 @@ class Promise:
     proof: Optional[str]
     quote: str
     created: str
+    enforcer: Optional[str] = None
+    max_amount: Optional[float] = None
+    pay_to: Optional[str] = None
+    locked_until: Optional[str] = None
+    locked_at: Optional[str] = None
 
     def label(self) -> str:
         if self.cadence in ("daily", "weekdays"):
@@ -89,7 +99,9 @@ class Ledger:
 
     def add(self, what: str, cadence: str, quote: str, *, per_week: int = 1,
             due: Optional[str] = None, consequence: Optional[str] = None,
-            proof: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
+            proof: Optional[str] = None, enforcer: Optional[str] = None,
+            max_amount: Optional[float] = None, pay_to: Optional[str] = None,
+            now: Optional[datetime] = None) -> Promise:
         what = " ".join((what or "").split())
         if not what:
             raise ValueError("say what the promise is")
@@ -101,11 +113,12 @@ class Ledger:
             date.fromisoformat(due)  # raises on a bad date
         now = now or datetime.now()
         cur = self._db.execute(
-            "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, quote, created)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, enforcer,"
+            " max_amount, pay_to, quote, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (what, cadence, int(per_week) if cadence == "weekly" else 1, due,
-             (consequence or "").strip() or None, (proof or "").strip() or None, quote,
-             now.isoformat(timespec="seconds")))
+             (consequence or "").strip() or None, (proof or "").strip() or None,
+             (enforcer or "").strip() or None, float(max_amount) if max_amount else None,
+             (pay_to or "").strip() or None, quote, now.isoformat(timespec="seconds")))
         self._db.commit()
         return self.get(cur.lastrowid)
 
@@ -135,9 +148,19 @@ class Ledger:
             out.append(p)
         return out
 
+    def lock(self, promise_id: int, until: date, now: Optional[datetime] = None) -> Promise:
+        now = now or datetime.now()
+        self._db.execute("UPDATE promises SET locked_until = ?, locked_at = ? WHERE id = ?",
+                         (until.isoformat(), now.isoformat(timespec="seconds"), int(promise_id)))
+        self._db.commit()
+        return self.get(promise_id)
+
     def drop(self, promise_id: int, quote: str, now: Optional[datetime] = None) -> Promise:
         p = self.get(promise_id)
         now = now or datetime.now()
+        if locked(p, now):
+            raise ValueError(f"#{p.id} is locked in until {p.locked_until}. It can't be dropped or "
+                             "softened before then; that was the deal.")
         self._db.execute("UPDATE promises SET dropped = ?, drop_quote = ? WHERE id = ?",
                          (now.isoformat(timespec="seconds"), quote, p.id))
         self._db.commit()
@@ -249,8 +272,20 @@ class Ledger:
         self._db.commit()
 
 
+COOL_OFF = timedelta(hours=24)
+
+
+def locked(p: Promise, now: datetime) -> bool:
+    """Locked in, past the 24-hour cool-off, and before the end date."""
+    if not p.locked_until or not p.locked_at:
+        return False
+    return (now - datetime.fromisoformat(p.locked_at) >= COOL_OFF
+            and now.date() <= date.fromisoformat(p.locked_until))
+
+
 def _promise(row: sqlite3.Row) -> Promise:
     return Promise(id=row["id"], what=row["what"], cadence=row["cadence"],
                    per_week=row["per_week"], due=row["due"], consequence=row["consequence"],
-                   proof=row["proof"],
+                   proof=row["proof"], enforcer=row["enforcer"], max_amount=row["max_amount"],
+                   pay_to=row["pay_to"], locked_until=row["locked_until"], locked_at=row["locked_at"],
                    quote=row["quote"], created=row["created"])

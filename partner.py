@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from . import answers
-from .ledger import Ledger, Promise, week_start
+from .ledger import Ledger, Promise, locked, week_start
 
 SILENT = "[SILENT]"
 
@@ -48,15 +48,56 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         p = ledger.add(args.get("what", ""), args.get("cadence", "daily"), args["user_quote"],
                        per_week=int(args.get("per_week") or 1), due=args.get("due") or None,
                        consequence=args.get("consequence"), proof=args.get("proof"),
+                       enforcer=args.get("enforcer_tool"), max_amount=args.get("max_amount"),
+                       pay_to=args.get("pay_to"),
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
     out = {"ok": True, "id": p.id, "saved": p.label(), "quote": p.quote}
+    if p.enforcer:
+        out["enforcer_tool"] = p.enforcer
     if p.consequence:
         out["consequence"] = p.consequence
     if p.proof:
         out["proof"] = p.proof
     return out
+
+
+_LOCK_WORDS = re.compile(r"\b(lock|locked|hold me to it|no backing out|no way out|can't back out)\b")
+MAX_LOCK_DAYS = 90
+
+
+def lock(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict:
+    """Lock a promise in: its consequence fires on a miss without asking again, and it can't be
+    dropped or softened until ``until``. Only on the user's explicit words, with rails."""
+    quote = args.get("user_quote", "")
+    refused = _need_words(quote, message)
+    if refused:
+        return refused
+    if not _LOCK_WORDS.search(_norm(quote)):
+        return {"ok": False, "error": "Locking needs the user's explicit words, like 'lock it in' "
+                                      "or 'hold me to it'. Ask them; never lock on your own."}
+    try:
+        p = ledger.get(int(args.get("id")))
+        until = date.fromisoformat(args.get("until") or "")
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"need a promise id and an end date YYYY-MM-DD ({exc})"}
+    if not today < until <= today + timedelta(days=MAX_LOCK_DAYS):
+        return {"ok": False, "error": f"The end date must be within {MAX_LOCK_DAYS} days."}
+    if not (p.consequence and p.enforcer):
+        return {"ok": False, "error": "A locked promise needs a consequence and the tool that "
+                                      "enforces it (enforcer_tool). Add those first."}
+    if p.max_amount is None and re.search(r"[$€£]|\b(usd|eur|send|pay|donate)\b", _norm(p.consequence)):
+        return {"ok": False, "error": "A money consequence needs max_amount before it can be locked."}
+    p = ledger.lock(p.id, until)
+    return {"ok": True, "locked": p.label(), "until": p.locked_until, "cool_off_hours": 24,
+            "tell_the_user": (
+                f"Locked until {p.locked_until}. For 24 hours you can still undo it; after that it "
+                f"can't be dropped or softened. On a miss, Hermes will {p.consequence} with "
+                f"{p.enforcer} without asking again"
+                + (f", never more than {p.max_amount:g} per miss" if p.max_amount else "")
+                + (f", only to {p.pay_to}" if p.pay_to else "")
+                + f". Give {p.enforcer} a standing OK in Hermes (choose 'always' when it first asks).")}
 
 
 def drop(ledger: Ledger, args: dict, message: Optional[str]) -> dict:
@@ -114,7 +155,8 @@ def listing(ledger: Ledger, today: date) -> dict:
     items = [{"id": p.id, "promise": p.label(), "said": p.quote,
               "this_week": line_for(ledger, p, today),
               **({"consequence": p.consequence} if p.consequence else {}),
-              **({"proof": p.proof} if p.proof else {})}
+              **({"proof": p.proof} if p.proof else {}),
+              **({"locked_until": p.locked_until} if p.locked_until else {})}
              for p in ledger.active()]
     return {"ok": True, "promises": items} if items else {
         "ok": True, "promises": [], "note": "No promises yet. They start from the user's own words."}
@@ -255,8 +297,15 @@ def owed(ledger: Ledger, today: date) -> list[dict]:
                 today.weekday() == 6 and ledger.kept_between(p.id, start, today) < p.per_week) else []
         else:
             periods = [_period(p, d) for d in ledger.misses(p.id, start, today)]
-        out += [{"id": p.id, "what": p.what, "consequence": p.consequence, "for": period}
-                for period in periods if not ledger.enforced(p.id, period)]
+        for period in periods:
+            if ledger.enforced(p.id, period):
+                continue
+            item = {"id": p.id, "what": p.what, "consequence": p.consequence, "for": period}
+            if p.enforcer:
+                item["enforcer_tool"] = p.enforcer
+            if p.locked_until and locked(p, datetime.now()):
+                item["locked_in"] = True
+            out.append(item)
     return out
 
 
@@ -275,10 +324,57 @@ def enforced(ledger: Ledger, args: dict, tool_results: list, today: date) -> dic
 
 
 ENFORCE_NOTE = (
-    "For each one, carry out the consequence the user chose with their connected tools (a wallet, "
-    "a Screen Time or app-blocking tool, whatever they named). Hermes's normal approvals apply: "
-    "never work around them. When a tool's result shows it was done, call promise_enforced quoting "
-    "that result. If no connected tool can do it, tell the user plainly it is still owed.")
+    "For each one, carry out the consequence the user chose with their connected tools (its "
+    "enforcer_tool if named: a wallet, a Screen Time or app-blocking tool). One marked locked_in "
+    "was locked in by the user: do it now, don't ask them again or talk them out of it. Hermes's "
+    "approvals still apply: never work around them. When a tool's result shows it was done, call "
+    "promise_enforced quoting that result. If no connected tool can do it, say plainly it is still owed.")
+
+
+_AMOUNT_KEY = re.compile(r"amount|value|usd|sum|total|price")
+_PAYEE_KEY = re.compile(r"^(to|recipient|address|destination|payee|charity|to_address)$")
+
+
+def _walk(args, path=()):
+    if isinstance(args, dict):
+        for k, v in args.items():
+            yield from _walk(v, path + (str(k).lower(),))
+    elif isinstance(args, list):
+        for v in args:
+            yield from _walk(v, path)
+    else:
+        yield path, args
+
+
+def guard(ledger: Ledger, tool_name: str, args: dict, today: date) -> Optional[dict]:
+    """pre_tool_call: while a consequence is owed through ``tool_name``, hold the call to the rails
+    set at setup (max amount, recipient). Calls when nothing is owed are none of our business."""
+    due = [o for o in owed(ledger, today) if o.get("enforcer_tool") == tool_name]
+    if not due:
+        return None
+    promises = [ledger.get(o["id"]) for o in due]
+    caps = [p.max_amount for p in promises if p.max_amount is not None]
+    payees = {_norm(p.pay_to) for p in promises if p.pay_to}
+    for path, value in _walk(args or {}):
+        key = path[-1] if path else ""
+        if caps and _AMOUNT_KEY.search(key):
+            try:
+                amount = float(str(value).replace("$", "").replace(",", ""))
+            except ValueError:
+                continue
+            if amount > max(caps):
+                return {"action": "block", "message": (
+                    f"Accountability Partner: {amount:g} is over the {max(caps):g} limit the user "
+                    "set for this consequence.")}
+        if payees and _PAYEE_KEY.match(key) and _norm(str(value)) not in payees:
+            return {"action": "block", "message": (
+                "Accountability Partner: that recipient isn't the one the user named for this "
+                "consequence.")}
+    if not any(p.locked_until and locked(p, datetime.now()) for p in promises):
+        return {"action": "approve", "message": (
+            "Accountability Partner: carrying out a consequence the user chose. It isn't locked "
+            "in, so it needs their yes."), "rule_key": "accountability-partner:consequence"}
+    return None
 
 
 # --- scores ---------------------------------------------------------------------------------

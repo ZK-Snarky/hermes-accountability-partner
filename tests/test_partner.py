@@ -196,3 +196,48 @@ def test_consequence_is_enforced_only_with_proof(ledger):
                                    "evidence": '"status": "sent", "amount": "20.00"'}, wallet, MON)
     assert ok["ok"] and partner.owed(ledger, MON) == []
     assert "send $20 to charity from my wallet, done ✓ (wallet send)" in partner.weekly_report(ledger, MON)
+
+
+def _locked_gym(ledger, tmp_now=None):
+    p = _add(ledger, "gym every day, if I miss send $20 to GiveDirectly", what="Gym", cadence="daily",
+             consequence="send $20 to GiveDirectly", enforcer_tool="wallet_send", max_amount=20,
+             pay_to="GiveDirectly", user_quote="gym every day")
+    return p
+
+
+def test_lock_needs_explicit_words_and_rails(ledger):
+    p = _locked_gym(ledger)
+    until = (MON + timedelta(days=30)).isoformat()
+    assert partner.lock(ledger, {"id": p["id"], "until": until, "user_quote": "gym every day"},
+                        "gym every day", MON)["ok"] is False
+    assert partner.lock(ledger, {"id": p["id"], "until": (MON + timedelta(days=200)).isoformat(),
+                                 "user_quote": "lock it in"}, "lock it in", MON)["ok"] is False
+    out = partner.lock(ledger, {"id": p["id"], "until": until, "user_quote": "lock it in, hold me to it"},
+                       "ok lock it in, hold me to it", MON)
+    assert out["ok"] and "without asking again" in out["tell_the_user"]
+
+
+def test_locked_promise_cant_be_dropped_after_cool_off(ledger):
+    p = _locked_gym(ledger)
+    ledger.lock(p["id"], date.today() + timedelta(days=30), now=datetime.now() - timedelta(hours=25))
+    out = partner.drop(ledger, {"id": p["id"], "user_quote": "drop the gym one"}, "drop the gym one")
+    assert out["ok"] is False and "locked in" in out["error"]
+    q = _add(ledger, "read daily", what="Read", cadence="daily", user_quote="read daily")
+    ledger.lock(q["id"], date.today() + timedelta(days=30))  # still in cool-off
+    assert partner.drop(ledger, {"id": q["id"], "user_quote": "drop reading"}, "drop reading")["ok"]
+
+
+def test_guard_holds_the_wallet_to_the_rails(ledger):
+    p = _locked_gym(ledger)
+    assert partner.guard(ledger, "wallet_send", {"amount": 500, "to": "Bob"}, MON) is None  # nothing owed
+    ledger.report(p["id"], MON, False, "no")
+    too_much = partner.guard(ledger, "wallet_send", {"amount": "$50", "to": "GiveDirectly"}, MON)
+    wrong_payee = partner.guard(ledger, "wallet_send", {"amount": 20, "to": "Bob"}, MON)
+    assert too_much["action"] == "block" and wrong_payee["action"] == "block"
+    # not locked in: the user's yes is required
+    assert partner.guard(ledger, "wallet_send", {"amount": 20, "to": "GiveDirectly"}, MON)["action"] == "approve"
+    ledger.lock(p["id"], date.today() + timedelta(days=30), now=datetime.now() - timedelta(hours=25))
+    today = date.today()
+    ledger.report(p["id"], today, False, "no")
+    assert partner.guard(ledger, "wallet_send", {"amount": 20, "to": "GiveDirectly"}, today) is None
+    assert partner.owed(ledger, today)[-1]["locked_in"] is True

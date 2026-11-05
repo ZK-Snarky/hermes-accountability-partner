@@ -18,6 +18,12 @@ receipts instead of just taking your word for it.
   that tool's result shows it (a transfer id, a block confirmation). Money and phone locks go through
   Hermes's normal approvals like any other tool call. The plugin knows nothing about any one wallet
   or app, so any tool can become an enforcer.
+- **Lock it in.** Say "lock it in, hold me to it" and the promise is locked until an end date you
+  pick (90 days at most). After a 24-hour cool-off it can't be dropped or softened, and on a miss its
+  consequence fires without asking again. The one yes happens at setup: you give the enforcing tool
+  a standing OK in Hermes ("always"). Rails are enforced in code on every call to that tool while a
+  consequence is owed: never more than the amount you set, never to anyone but the recipient you
+  named. A consequence that isn't locked in always asks for your yes first.
 - **An honest score.** Streaks, "2 of 3 this week", and a Sunday receipt: *you said 12, you did 9*,
   plus any consequence you chose for a miss.
 - **No fudging, enforced in code.** Only your own words (or a real receipt) add, drop or mark a
@@ -53,6 +59,7 @@ Dates follow the machine's local time. Set `TZ` for another time zone.
 | "Gym 3x a week. If I miss, no Netflix Sunday" | Weekly goal of 3, with your consequence |
 | "Send the deck to Sam by Friday" | One-time promise with a due date |
 | "Ship code every weekday, check my GitHub" | Proven from your commits each night, no question asked |
+| "Gym 3x a week or send $20 to GiveDirectly. Lock it in till New Year." | Locked: a missed week sends $20 (max), only to GiveDirectly, no backing out |
 | `yes no` (after a check-in) | Saved by the plugin itself, before the model runs |
 | "Went to the gym today" | The agent records it, quoting you |
 | "Drop the stretching one" | Removed, with your quote on file |
@@ -72,6 +79,7 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
 | `promise_add` | tool | Save a promise. Needs `user_quote` from the user's current message. |
 | `promise_prove` | tool | Mark a promise kept from a tool's result. The evidence must be text that tool returned this session. |
 | `promise_enforced` | tool | Record that a missed promise's consequence was carried out. The evidence must be text the tool that did it returned this session. |
+| `promise_lock` | tool | Lock a promise in, only on the user's explicit words ("lock it in", "hold me to it"). Needs a consequence, its enforcing tool and, for money, a max amount. |
 | `promise_record` | tool | Mark promises kept or missed today or yesterday. Needs `user_quote`. |
 | `promise_drop` | tool | Drop a promise. Needs `user_quote`. |
 | `promise_list` | tool | Promises with this week's score. |
@@ -79,6 +87,7 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
 | `promise_report` | tool | Builds the weekly receipt (used by the weekly blueprint). |
 | `pre_llm_call` | hook | Remembers the user's current message (in memory only) for the quote check, and saves a clean `yes no` check-in answer. |
 | `post_tool_call` | hook | Keeps recent tool results per session in memory (30 minutes, never on disk) so receipts can be checked. |
+| `pre_tool_call` | hook | While a consequence is owed through a tool, blocks calls to it over the amount or to another recipient, and asks for the user's yes unless the promise is locked in. Other tool calls are left alone. |
 | `/promises` | command | Shows the list without a model call. |
 
 ## What it stores, and what it doesn't
@@ -90,6 +99,8 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
   disk unless it becomes a quote on a promise you saved.
 - The `post_tool_call` hook sees tool results so it can check receipts. It keeps the last 40 per
   session in memory for 30 minutes. Only the short evidence quote of a receipt is written to disk.
+- The `pre_tool_call` hook sees tool arguments, but only acts on calls to a tool named as a promise's
+  enforcer while a consequence is owed.
 - No network calls, no shell commands, no background threads, no secrets, no telemetry.
   The plugin never calls your connected tools itself; the agent does, through Hermes, with your
   normal approvals. The schedules are ordinary Hermes cron jobs that you turn on yourself.

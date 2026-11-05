@@ -154,6 +154,20 @@ def _prove(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.prove(ledger(), args, _results_this_session(session_id), today()))
 
 
+def _lock(args: dict, session_id: str = "", **_: Any) -> str:
+    return _json(partner.lock(ledger(), args, _users_words(session_id), today()))
+
+
+def on_pre_tool_call(tool_name: str = "", args: Any = None, **_: Any):
+    if not tool_name or tool_name.startswith("promise_"):
+        return None
+    try:
+        return partner.guard(ledger(), tool_name, args if isinstance(args, dict) else {}, today())
+    except Exception:  # noqa: BLE001 - never hold up an unrelated tool over the ledger
+        logger.exception("accountability-partner: consequence guard failed")
+        return None
+
+
 def _enforced(args: dict, session_id: str = "", **_: Any) -> str:
     return _json(partner.enforced(ledger(), args, _results_this_session(session_id), today()))
 
@@ -199,6 +213,11 @@ TOOLS = [
             "Only if the user named one themselves: what happens on a miss, ideally something a "
             "connected tool can carry out, e.g. 'send $20 to GiveDirectly from my wallet' or "
             "'block Instagram for 24 hours'.")},
+        "enforcer_tool": {"type": "string", "description": (
+            "Optional: the exact name of the connected tool that carries out the consequence, "
+            "e.g. a wallet's send tool or an app blocker.")},
+        "max_amount": {"type": "number", "description": "For a money consequence: the most per miss."},
+        "pay_to": {"type": "string", "description": "For a money consequence: the only recipient allowed."},
         "proof": {"type": "string", "description": (
             "Optional: where a connected tool can show it happened, e.g. 'Strava run today' or "
             "'GitHub commits to acme/app today'.")},
@@ -211,6 +230,15 @@ TOOLS = [
         "source_tool": {"type": "string", "description": "The name of the tool that returned the proof."},
         "evidence": {"type": "string", "description": "Exact text from that tool's output that shows it happened."},
     }, ["id", "source_tool", "evidence"]),
+    ("promise_lock", _lock, (
+        "Lock a promise in, only when the user explicitly asks ('lock it in', 'hold me to it'): "
+        "on a miss its consequence fires without asking again, and it can't be dropped or softened "
+        "until the end date (max 90 days, 24-hour cool-off first). Tell the user exactly what "
+        "tell_the_user says."), {
+        "id": {"type": "integer"},
+        "until": {"type": "string", "description": "End date, YYYY-MM-DD."},
+        "user_quote": _QUOTE,
+    }, ["id", "until", "user_quote"]),
     ("promise_enforced", _enforced, (
         "Record that a missed promise's consequence was carried out, from the result of the tool "
         "that did it (a wallet transfer id, an app-block confirmation). evidence is checked."), {
@@ -258,6 +286,7 @@ def register(ctx) -> None:
                 "type": "object", "properties": props, "required": required}})
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
+    ctx.register_hook("pre_tool_call", on_pre_tool_call)
     ctx.register_command("promises", _promises_command,
                          description="Your promises and this week's score")
     ctx.register_system_prompt_section("accountability-partner", GUIDE)
