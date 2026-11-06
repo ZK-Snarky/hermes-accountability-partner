@@ -1,0 +1,11 @@
+Music bed for the Accountability Partner demo video (bed.m4a)
+
+Source: generated locally on this Mac with ffmpeg's built-in audio sources (sine
+tones at 110, 164.81, 220 and 277.18 Hz plus filtered pink noise, mixed with
+tremolo, low-pass and echo). No samples, loops or recordings from anyone else
+were used, and nothing was downloaded.
+
+License: CC0 1.0 (public domain dedication). Free to use, change and share
+for any purpose, without attribution.
+
+Exact command: see audio/make-bed.sh beside this file.
