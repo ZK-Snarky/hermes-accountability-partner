@@ -65,27 +65,27 @@ def _send(args, **_):
 def register(ctx):
     _set_clock()
     ctx.register_hook("pre_llm_call", _set_clock)
-    ctx.register_tool(name="demo_github_commits_today", toolset="demo", handler=_commits,
-                      description="DEMO: list today's commits on a GitHub repo.", schema={
-        "name": "demo_github_commits_today", "description": "DEMO: list today's commits on a GitHub repo.",
+    ctx.register_tool(name="github_commits_today", toolset="demo", handler=_commits,
+                      description="list today's commits on a GitHub repo.", schema={
+        "name": "github_commits_today", "description": "list today's commits on a GitHub repo.",
         "parameters": {"type": "object", "properties": {"repo": {"type": "string"}}, "required": []}})
-    ctx.register_tool(name="demo_whoop_workouts_today", toolset="demo", handler=_whoop,
-                      description="DEMO: list today's workouts from WHOOP.", schema={
-        "name": "demo_whoop_workouts_today", "description": "DEMO: list today's workouts from WHOOP.",
+    ctx.register_tool(name="whoop_workouts_today", toolset="demo", handler=_whoop,
+                      description="list today's workouts from WHOOP.", schema={
+        "name": "whoop_workouts_today", "description": "list today's workouts from WHOOP.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
-    ctx.register_tool(name="demo_location_visits_today", toolset="demo", handler=_places,
-                      description="DEMO: list today's place visits from location history.", schema={
-        "name": "demo_location_visits_today", "description": "DEMO: list today's place visits from location history.",
+    ctx.register_tool(name="location_visits_today", toolset="demo", handler=_places,
+                      description="list today's place visits from location history.", schema={
+        "name": "location_visits_today", "description": "list today's place visits from location history.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
-    ctx.register_tool(name="demo_screentime_app_block", toolset="demo", handler=_block,
-                      description="DEMO example integration with a Screen Time app, test mode: nothing is really blocked.", schema={
-        "name": "demo_screentime_app_block",
-        "description": "DEMO example integration with a Screen Time app, test mode: nothing is really blocked.",
+    ctx.register_tool(name="screentime_app_block", toolset="demo", handler=_block,
+                      description="Screen Time app block (stand-in, test mode: nothing is really blocked).", schema={
+        "name": "screentime_app_block",
+        "description": "Screen Time app block (stand-in, test mode: nothing is really blocked).",
         "parameters": {"type": "object", "properties": {
             "app": {"type": "string"}, "hours": {"type": "number"}}, "required": ["app", "hours"]}})
-    ctx.register_tool(name="demo_agent_wallet_send", toolset="demo", handler=_send,
-                      description="DEMO agent wallet, test mode: the agent pays from it (no real money moves).", schema={
-        "name": "demo_agent_wallet_send", "description": "DEMO agent wallet, test mode: the agent pays from it (no real money moves).",
+    ctx.register_tool(name="agent_wallet_send", toolset="demo", handler=_send,
+                      description="The agent's wallet (stand-in, test mode: no real money moves).", schema={
+        "name": "agent_wallet_send", "description": "The agent's wallet (stand-in, test mode: no real money moves).",
         "parameters": {"type": "object", "properties": {
             "amount": {"type": "number"}, "to": {"type": "string"}, "memo": {"type": "string"}},
             "required": ["amount", "to"]}})
