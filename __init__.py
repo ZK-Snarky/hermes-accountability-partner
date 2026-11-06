@@ -1,5 +1,5 @@
 """DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts, today's place visits,
-and the agent's test-mode wallet that moves no money. Nothing here touches the network.
+a test-mode Screen Time control, and the agent's test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
 Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
@@ -51,6 +51,11 @@ def _places(args, **_):
         {"place": "Cafe", "arrived": f"{today}T15:20:00", "minutes": 25}]})
 
 
+def _block(args, **_):
+    return json.dumps({"status": "blocked", "app": args.get("app"), "hours": args.get("hours"),
+                       "mode": "TEST (nothing blocked)", "id": "test_" + uuid.uuid4().hex[:10]})
+
+
 def _send(args, **_):
     return json.dumps({"status": "sent", "mode": "TEST (no real money)",
                        "amount": args.get("amount"), "to": args.get("to"),
@@ -72,6 +77,12 @@ def register(ctx):
                       description="DEMO: list today's place visits from location history.", schema={
         "name": "demo_location_visits_today", "description": "DEMO: list today's place visits from location history.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="demo_screen_time_block", toolset="demo", handler=_block,
+                      description="DEMO Screen Time control, test mode: nothing is really blocked.", schema={
+        "name": "demo_screen_time_block",
+        "description": "DEMO Screen Time control, test mode: nothing is really blocked.",
+        "parameters": {"type": "object", "properties": {
+            "app": {"type": "string"}, "hours": {"type": "number"}}, "required": ["app", "hours"]}})
     ctx.register_tool(name="demo_agent_wallet_send", toolset="demo", handler=_send,
                       description="DEMO agent wallet, test mode: the agent pays from it (no real money moves).", schema={
         "name": "demo_agent_wallet_send", "description": "DEMO agent wallet, test mode: the agent pays from it (no real money moves).",
