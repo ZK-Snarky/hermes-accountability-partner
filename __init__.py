@@ -47,6 +47,7 @@ def _whoop(args, **_):
 def _places(args, **_):
     today = _today().isoformat()
     return json.dumps({"source": "Location history", "date": today, "visits": [
+        {"place": "Gym", "arrived": f"{today}T07:10:00", "minutes": 52},
         {"place": "Library", "arrived": f"{today}T13:05:00", "minutes": 72},
         {"place": "Cafe", "arrived": f"{today}T15:20:00", "minutes": 25}]})
 
