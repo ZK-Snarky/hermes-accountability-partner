@@ -77,10 +77,10 @@ def register(ctx):
                       description="DEMO: list today's place visits from location history.", schema={
         "name": "demo_location_visits_today", "description": "DEMO: list today's place visits from location history.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
-    ctx.register_tool(name="demo_screen_time_block", toolset="demo", handler=_block,
-                      description="DEMO Screen Time control, test mode: nothing is really blocked.", schema={
-        "name": "demo_screen_time_block",
-        "description": "DEMO Screen Time control, test mode: nothing is really blocked.",
+    ctx.register_tool(name="demo_screentime_app_block", toolset="demo", handler=_block,
+                      description="DEMO example integration with a Screen Time app, test mode: nothing is really blocked.", schema={
+        "name": "demo_screentime_app_block",
+        "description": "DEMO example integration with a Screen Time app, test mode: nothing is really blocked.",
         "parameters": {"type": "object", "properties": {
             "app": {"type": "string"}, "hours": {"type": "number"}}, "required": ["app", "hours"]}})
     ctx.register_tool(name="demo_agent_wallet_send", toolset="demo", handler=_send,
