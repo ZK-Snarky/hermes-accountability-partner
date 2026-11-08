@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS promises (
     proof_tool TEXT,
     proof_args TEXT,
     rule TEXT,
+    data_decides INTEGER,
     quote TEXT NOT NULL,
     created TEXT NOT NULL,
     dropped TEXT,
@@ -80,6 +81,7 @@ class Promise:
     proof_tool: Optional[str] = None
     proof_args: Optional[str] = None
     rule: Optional[str] = None
+    data_decides: bool = False
 
     def _from(self) -> str:
         return _from_label(self)
@@ -122,7 +124,8 @@ class Ledger:
         have = {r["name"] for r in self._db.execute("PRAGMA table_info(promises)")}
         for col, kind in (("proof", "TEXT"), ("enforcer", "TEXT"), ("max_amount", "REAL"),
                           ("pay_to", "TEXT"), ("locked_until", "TEXT"), ("locked_at", "TEXT"),
-                          ("starts", "TEXT"), ("proof_tool", "TEXT"), ("proof_args", "TEXT"), ("rule", "TEXT")):
+                          ("starts", "TEXT"), ("proof_tool", "TEXT"), ("proof_args", "TEXT"), ("rule", "TEXT"),
+                          ("data_decides", "INTEGER")):
             if col not in have:
                 self._db.execute(f"ALTER TABLE promises ADD COLUMN {col} {kind}")
         if "source" not in {r["name"] for r in self._db.execute("PRAGMA table_info(reports)")}:
@@ -136,7 +139,8 @@ class Ledger:
             max_amount: Optional[float] = None, pay_to: Optional[str] = None,
             starts: Optional[str] = None, proof_tool: Optional[str] = None,
             proof_args: Optional[str] = None,
-            rule: Optional[str] = None, now: Optional[datetime] = None) -> Promise:
+            rule: Optional[str] = None, data_decides: bool = False,
+            now: Optional[datetime] = None) -> Promise:
         what = " ".join((what or "").split())
         if not what:
             raise ValueError("say what the promise is")
@@ -151,13 +155,13 @@ class Ledger:
         now = now or datetime.now()
         cur = self._db.execute(
             "INSERT INTO promises (what, cadence, per_week, due, consequence, proof, enforcer,"
-            " max_amount, pay_to, starts, proof_tool, proof_args, rule, quote, created)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " max_amount, pay_to, starts, proof_tool, proof_args, rule, data_decides, quote, created)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (what, cadence, int(per_week) if cadence == "weekly" else 1, due,
              (consequence or "").strip() or None, (proof or "").strip() or None,
              (enforcer or "").strip() or None, float(max_amount) if max_amount else None,
              (pay_to or "").strip() or None, starts or None, (proof_tool or "").strip() or None, proof_args or None,
-             (rule or "").strip() or None, quote, now.isoformat(timespec="seconds")))
+             (rule or "").strip() or None, 1 if data_decides else None, quote, now.isoformat(timespec="seconds")))
         self._db.commit()
         return self.get(cur.lastrowid)
 
@@ -344,4 +348,4 @@ def _promise(row: sqlite3.Row) -> Promise:
                    proof=row["proof"], enforcer=row["enforcer"], max_amount=row["max_amount"],
                    pay_to=row["pay_to"], locked_until=row["locked_until"], locked_at=row["locked_at"],
                    starts=row["starts"], proof_tool=row["proof_tool"], proof_args=row["proof_args"], rule=row["rule"],
-                   quote=row["quote"], created=row["created"])
+                   data_decides=bool(row["data_decides"]), quote=row["quote"], created=row["created"])

@@ -277,7 +277,13 @@ def _checkin(args: dict, **_: Any) -> str:
                 "field says, and when a tool shows it, call promise_prove quoting that tool's "
                 "output. Skip any you can't check. Then call promise_checkin again with send_now "
                 "true.")})
-    return _json({"message": partner.checkin(led, day)})
+    out = {"message": partner.checkin(led, day)}
+    owe = [o for o in partner.owed(led, day)  # a miss the data just decided is owed tonight
+           if led.day_report(o["id"], day) is False and led.receipt(o["id"], day)]
+    if owe:
+        out["enforce_now"] = owe
+        out["next"] = partner.ENFORCE_NOTE
+    return _json(out)
 
 
 def _report(args: dict, **_: Any) -> str:
@@ -329,6 +335,10 @@ TOOLS = [
             "minutes >= 30', 'message contains fix', or for a list field 'commits >= 1' (a list "
             "counts its items; no len() needed). Use the field names the tool returns, and "
             "include what must have happened, not just a label.")},
+        "data_decides": {"type": "boolean", "description": (
+            "With rule: true only if the user said to trust the data (e.g. 'the data decides', "
+            "'don't ask me'). Then at the check-in, data that fails the rule is a miss without "
+            "asking. Default false: the plugin shows the data and asks the user.")},
         "user_quote": _QUOTE,
     }, ["what", "cadence", "user_quote"]),
     ("promise_prove", _prove, (

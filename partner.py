@@ -60,6 +60,8 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
         return {"ok": False, "error": (
             f"{proof_tool} can't prove this promise: a promise tool can't be its own receipt, and "
             "the tool that carries out the consequence can't also be its proof.")}
+    if args.get("data_decides") and not rule:
+        return {"ok": False, "error": "data_decides needs a rule and proof_tool: the data can only decide what a rule checks."}
     if rule:
         if not proof_tool:
             return {"ok": False, "error": "A rule needs proof_tool: the exact name of the tool whose data it checks."}
@@ -79,6 +81,7 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
                        pay_to=args.get("pay_to"), starts=args.get("starts") or None,
                        proof_tool=proof_tool, rule=rule,
                        proof_args=json.dumps(proof_args, sort_keys=True) if proof_args else None,
+                       **({"data_decides": True} if args.get("data_decides") else {}),
                        now=datetime.combine(today, datetime.now().time()))
     except (ValueError, KeyError) as exc:
         return {"ok": False, "error": str(exc)}
@@ -92,6 +95,9 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
     if p.rule:
         out["counts_when"] = f"{p.rule} in {p.proof_tool}"
         out["tell_the_user"] = f"It counts when {_tool_label(p.proof_tool)} shows {rule_words(p.rule)}."
+        if getattr(p, "data_decides", False):
+            out["tell_the_user"] += (f" The data decides: if {_tool_label(p.proof_tool)} shows it wasn't met at "
+                                     "the check-in, it's a miss without asking you.")
     return out
 
 
@@ -332,8 +338,10 @@ def prove_first(ledger: Ledger, today: date) -> list[dict]:
 def checkin(ledger: Ledger, today: date) -> str:
     due = to_ask(ledger, today)
     seen = [p for p in due if ledger.day_report(p.id, today) is True and ledger.receipt(p.id, today)]
+    data_missed = [p for p in due if getattr(p, "data_decides", False) and ledger.day_report(p.id, today) is False
+                   and ledger.receipt(p.id, today)]
     asks = [p for p in due if ledger.day_report(p.id, today) is None]
-    if not asks and not seen:
+    if not asks and not seen and not data_missed:
         ledger.clear_pending()
         return SILENT
     lines = [f"Check-in for {today.strftime('%a %b')} {today.day}:"]
@@ -341,9 +349,13 @@ def checkin(ledger: Ledger, today: date) -> str:
         shown = f" ({ledger.report_quote(p.id, today)}, rule {p.rule})" if p.rule else ""
         lines.append(f"✓ {p.what}: seen in {_tool_label(ledger.receipt(p.id, today))}{shown} "
                      f"({line_for(ledger, p, today)})")
+    for p in data_missed:
+        lines.append(f"✗ {p.what}: {ledger.report_quote(p.id, today)} (the data decides) "
+                     f"({line_for(ledger, p, today)})")
     if not asks:
         ledger.clear_pending()
-        lines.append("Nothing to ask tonight. Everything is proven.")
+        lines.append("Nothing to ask tonight. Everything is proven." if not data_missed
+                     else "Nothing to ask tonight. The data settled every promise.")
         return "\n".join(lines)
     for n, p in enumerate(asks, 1):
         seen_note = ledger.reading(p.id, today)
@@ -396,7 +408,7 @@ def prove(ledger: Ledger, args: dict, tool_results: list, today: date) -> dict:
     return {"ok": True, "kept": p.what, "seen_in": tool, "score": line_for(ledger, p, today)}
 
 
-def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) -> dict:
+def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date, final: bool = False) -> dict:
     results = [text for name, text in tool_results if name == p.proof_tool]
     if not results:
         return {"ok": False, "error": f"Call {p.proof_tool} first; its data decides this one."}
@@ -407,6 +419,10 @@ def _prove_by_rule(ledger: Ledger, p: Promise, tool_results: list, today: date) 
                 "evidence": evidence, "score": line_for(ledger, p, today)}
     shown = f"{_tool_label(p.proof_tool)} shows {reading}" if reading else \
         f"{_tool_label(p.proof_tool)} has nothing for it"
+    if final and reading and getattr(p, "data_decides", False):
+        # the user chose to let the data decide: at the check-in, real data that fails the rule is a miss
+        ledger.report(p.id, today, False, f"{shown}; rule {p.rule}"[:300], source=p.proof_tool)
+        return {"ok": True, "missed": p.what, "seen_in": p.proof_tool, "rule": p.rule, "reading": shown}
     ledger.set_reading(p.id, today, f"{shown}; your rule: {p.rule}")
     return {"ok": False, "not_proven": f"{shown}; the rule is {p.rule}. Not marked. Tell the user "
             "what the tool shows and ask them plainly: did they do it today, yes or no? Record "
@@ -431,7 +447,7 @@ def check_by_fetching(ledger: Ledger, today: date, fetch) -> list[int]:
         if not isinstance(result, str) or '"error"' in result[:200]:
             failed.append(p.id)
             continue
-        _prove_by_rule(ledger, p, [(p.proof_tool, result)], today)
+        _prove_by_rule(ledger, p, [(p.proof_tool, result)], today, final=True)
     return failed
 
 

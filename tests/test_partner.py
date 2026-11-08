@@ -539,3 +539,34 @@ def test_a_claimed_done_checks_the_data_first(tmp_path, monkeypatch):
     out = json.loads(plugin._record({"results": [{"id": pid, "kept": True}],
                                      "user_quote": "I basically worked out"}, session_id="s"))
     assert out["ok"] and out["checked_data"][0]["evidence"] == "minutes 45"
+
+
+def test_data_decides_makes_a_failing_reading_a_miss_at_the_checkin_only(ledger):
+    day = date(2026, 11, 12)
+    msg = "Keep dining under 120 this week, the data decides, if I go over send $20 to GiveDirectly"
+    base = {"what": "Dining budget", "cadence": "daily", "user_quote": msg, "proof_tool": "budget",
+            "rule": "spent <= 120", "data_decides": True, "consequence": "send $20 to GiveDirectly"}
+    assert not partner.add(ledger, {**base, "rule": None, "proof_tool": None}, msg, day)["ok"]
+    added = partner.add(ledger, base, msg, day)
+    assert "the data decides" in added["tell_the_user"].lower() or "data decides" in added["tell_the_user"]
+    pid = added["id"]
+    over = [("budget", '{"category": "dining", "spent": 142}')]
+    assert partner.prove(ledger, {"id": pid}, over, day)["ok"] is False  # mid-day: shown, not missed
+    assert ledger.day_report(pid, day) is None
+    assert partner.check_by_fetching(ledger, day, lambda t, a: "[]") == []  # no data: never a miss
+    assert ledger.day_report(pid, day) is None
+    assert partner.check_by_fetching(ledger, day, lambda t, a: over[0][1]) == []
+    assert ledger.day_report(pid, day) is False
+    text = partner.checkin(ledger, day)
+    assert "✗ Dining budget: budget shows spent 142; rule spent <= 120 (the data decides)" in text
+    assert [o["id"] for o in partner.owed(ledger, day)] == [pid]
+
+
+def test_without_data_decides_a_failing_reading_is_still_asked(ledger):
+    day = date(2026, 11, 12)
+    msg = "Keep dining under 120"
+    pid = partner.add(ledger, {"what": "Dining budget", "cadence": "daily", "user_quote": msg,
+                               "proof_tool": "budget", "rule": "spent <= 120"}, msg, day)["id"]
+    partner.check_by_fetching(ledger, day, lambda t, a: '{"spent": 142}')
+    assert ledger.day_report(pid, day) is None
+    assert "1. Dining budget?" in partner.checkin(ledger, day)

@@ -14,7 +14,9 @@ receipts instead of just taking your word for it.
 - **Your rule, checked by code.** "A 30-minute WHOOP workout counts" is saved as a rule
   (`minutes >= 30`) on that tool's data. At check-in the plugin fetches the data itself and checks
   the rule (for tools you allowed with `/promises allow <tool>`): the model doesn't fetch or decide. If the data falls short or is missing, nothing is
-  marked missed: you're asked, and the check-in shows what the tool saw. Promises without a rule
+  marked missed: you're asked, and the check-in shows what the tool saw. Say "the data decides"
+  when you make the promise and a reading that fails the rule at check-in is a miss without
+  asking (missing data or a failed tool still never is). Promises without a rule
   get receipts the agent finds and quotes, checked against what the tool really returned.
 - **Consequences that actually happen.** "If I miss the gym, send $20 to charity from my wallet" or
   "block Instagram for a day." On a miss, Hermes carries it out with whatever you've connected: an
