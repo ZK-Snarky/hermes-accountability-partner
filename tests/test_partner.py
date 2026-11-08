@@ -579,3 +579,36 @@ def test_a_limit_cant_be_a_weekly_promise(ledger):
     refused = partner.add(ledger, {**base, "cadence": "weekly"}, msg, day)
     assert not refused["ok"] and "daily" in refused["error"]
     assert partner.add(ledger, {**base, "cadence": "daily"}, msg, day)["ok"]
+
+
+def test_a_plain_claim_the_data_contradicts_isnt_saved_until_the_user_has_seen_it(tmp_path, monkeypatch):
+    import json
+    import accountability_partner as plugin
+
+    class Ctx:
+        def get_config(self, key, default=None):
+            return [WHOOP] if key == "proof_tools" else default
+
+        def dispatch_tool(self, name, args):
+            return _whoop(27)
+    monkeypatch.setattr(plugin, "_ctx", Ctx())
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(plugin, "_ledger", None)
+    plugin.on_pre_llm_call(session_id="s", user_message="I'll work out every day, the data decides")
+    base = {"cadence": "daily", "user_quote": "I'll work out every day", "proof_tool": WHOOP, "rule": "minutes >= 30"}
+    pid = json.loads(plugin._add({**base, "what": "Work out"}, session_id="s"))["id"]
+    strict = json.loads(plugin._add({**base, "what": "Run", "data_decides": True}, session_id="s"))["id"]
+    led, day = plugin.ledger(), plugin.today()
+    for _ in range(2):
+        plugin.on_pre_llm_call(session_id="s", user_message="I worked out today, count it")
+        out = json.loads(plugin._record({"results": [{"id": strict, "kept": True}],
+                                         "user_quote": "I worked out today"}, session_id="s"))
+        assert not out["ok"] and led.day_report(strict, day) is None  # the data decides: never their word
+    out = json.loads(plugin._record({"results": [{"id": pid, "kept": True}],
+                                     "user_quote": "I worked out today"}, session_id="s"))
+    assert not out["ok"] and "minutes 27" in out["checked_data"][0]["not_proven"]
+    assert led.day_report(pid, day) is None
+    plugin.on_pre_llm_call(session_id="s", user_message="yes, I did it, the watch died")
+    out = json.loads(plugin._record({"results": [{"id": pid, "kept": True}],
+                                     "user_quote": "yes, I did it"}, session_id="s"))
+    assert out["ok"] and led.day_report(pid, day) is True  # after seeing the reading, their word counts

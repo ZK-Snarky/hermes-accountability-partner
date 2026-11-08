@@ -181,7 +181,8 @@ def _drop(args: dict, session_id: str = "", **_: Any) -> str:
 
 def _record(args: dict, session_id: str = "", **_: Any) -> str:
     """A 'kept' for today on a promise with a rule checks the data first, when the user allowed
-    its tool: met, it's proven by the data; not met, the reading goes back with the answer."""
+    its tool: met, it's proven by the data; not met, nothing is saved and the reading goes back so
+    the user is asked. Their yes after seeing the reading counts as their word, unless the data decides."""
     led, day = ledger(), today()
     checked, rest = [], []
     for item in args.get("results") or []:
@@ -197,13 +198,16 @@ def _record(args: dict, session_id: str = "", **_: Any) -> str:
             except Exception:
                 fresh = None
             if fresh is not None:
+                shown_before = led.reading(p.id, day)
                 result = partner.prove(led, {"id": p.id}, [(p.proof_tool, fresh)], day)
                 checked.append(result)
                 if result.get("ok"):
                     continue
+                if result.get("not_proven") and (shown_before is None or getattr(p, "data_decides", False)):
+                    continue  # the data says no: not saved; the user sees the reading and is asked
         rest.append(item)
     out = (partner.record(led, {**args, "results": rest}, _users_words(session_id), day)
-           if rest else {"ok": True})
+           if rest else {"ok": any(c.get("ok") for c in checked)})
     if checked:
         out["checked_data"] = checked
     return _json(out)
