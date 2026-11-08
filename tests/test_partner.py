@@ -570,3 +570,12 @@ def test_without_data_decides_a_failing_reading_is_still_asked(ledger):
     partner.check_by_fetching(ledger, day, lambda t, a: '{"spent": 142}')
     assert ledger.day_report(pid, day) is None
     assert "1. Dining budget?" in partner.checkin(ledger, day)
+
+
+def test_a_limit_cant_be_a_weekly_promise(ledger):
+    day = date(2026, 11, 9)
+    msg = "Keep dining under 120 this week"
+    base = {"what": "Dining budget", "user_quote": msg, "proof_tool": "budget", "rule": "spent <= 120"}
+    refused = partner.add(ledger, {**base, "cadence": "weekly"}, msg, day)
+    assert not refused["ok"] and "daily" in refused["error"]
+    assert partner.add(ledger, {**base, "cadence": "daily"}, msg, day)["ok"]

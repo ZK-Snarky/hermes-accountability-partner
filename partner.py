@@ -69,6 +69,10 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
             conds = parse_rule(rule)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        if args.get("cadence") == "weekly" and all(op in ("<", "<=") for _, op, _ in conds):
+            return {"ok": False, "error": (
+                f"'{rule}' is a limit, and a weekly promise is done once it's met, so a later day over "
+                "the limit would never be checked. Save a limit as daily: it's checked every day.")}
         if all(op == "=" for _, op, _ in conds):
             return {"ok": False, "error": (
                 f"'{rule}' only matches labels, so it would pass on a day when nothing happened. "
