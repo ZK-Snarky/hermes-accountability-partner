@@ -1,11 +1,12 @@
 name: demo-tools
 version: "0.1.0"
-description: "DEMO ONLY, not for real use: a fake GitHub commits lookup, a fake WHOOP workouts lookup, a fake location-visits lookup a test-mode Screen Time control (nothing blocked) and a test-mode agent wallet (no real money) for filming the Accountability Partner demo."
+description: "DEMO ONLY, not for real use: a fake GitHub commits lookup, a fake WHOOP workouts lookup, a fake location-visits lookup, a fake Monarch budget lookup, a test-mode Screen Time control (nothing blocked) and a test-mode agent wallet (no real money) for filming the Accountability Partner demo."
 author: ZK-Snarky
 provides_tools:
   - github_commits_today
   - whoop_workouts_today
   - location_visits_today
+  - monarch_budget_this_week
   - screentime_app_block
   - agent_wallet_send
 provides_hooks:

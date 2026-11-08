@@ -1,4 +1,4 @@
-"""DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts, today's place visits,
+"""DEMO ONLY. Stand-in tools for filming: today's commits on a sample repo, today's WHOOP workouts, today's place visits, this week's Monarch dining budget,
 a test-mode Screen Time control, and the agent's test-mode wallet that moves no money. Nothing here touches the network.
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
@@ -52,6 +52,15 @@ def _places(args, **_):
         {"place": "Cafe", "arrived": f"{today}T15:20:00", "minutes": 25}]})
 
 
+_DINING_SO_FAR = [38, 61, 88, 142, 142, 160, 160]  # Mon..Sun, sample spending this week
+
+
+def _monarch(args, **_):
+    day = _today()
+    return json.dumps({"source": "Monarch", "date": day.isoformat(), "category": "Dining out",
+                       "period": "this week", "spent": _DINING_SO_FAR[day.weekday()], "budget": 120})
+
+
 def _block(args, **_):
     return json.dumps({"status": "blocked", "app": args.get("app"), "hours": args.get("hours"),
                        "mode": "TEST (nothing blocked)", "id": "test_" + uuid.uuid4().hex[:10]})
@@ -77,6 +86,11 @@ def register(ctx):
     ctx.register_tool(name="location_visits_today", toolset="demo", handler=_places,
                       description="list today's place visits from location history.", schema={
         "name": "location_visits_today", "description": "list today's place visits from location history.",
+        "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="monarch_budget_this_week", toolset="demo", handler=_monarch,
+                      description="this week's dining-out spending against its budget, from Monarch.", schema={
+        "name": "monarch_budget_this_week",
+        "description": "this week's dining-out spending against its budget, from Monarch.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
     ctx.register_tool(name="screentime_app_block", toolset="demo", handler=_block,
                       description="Screen Time app block (stand-in, test mode: nothing is really blocked).", schema={
