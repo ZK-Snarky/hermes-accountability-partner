@@ -69,10 +69,6 @@ def add(ledger: Ledger, args: dict, message: Optional[str], today: date) -> dict
             conds = parse_rule(rule)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
-        if args.get("cadence") == "weekly" and all(op in ("<", "<=") for _, op, _ in conds):
-            return {"ok": False, "error": (
-                f"'{rule}' is a limit, and a weekly promise is done once it's met, so a later day over "
-                "the limit would never be checked. Save a limit as daily: it's checked every day.")}
         if all(op == "=" for _, op, _ in conds):
             return {"ok": False, "error": (
                 f"'{rule}' only matches labels, so it would pass on a day when nothing happened. "
@@ -178,6 +174,17 @@ def _meets(value, op, want) -> bool:
     return str(value).strip().lower() == str(want).lower()
 
 
+def _flat(rec: dict, prefix: str = "") -> dict:
+    """A record's fields, lower-cased, with nested ones also as dotted names ('sleep.hours')."""
+    out = {}
+    for k, v in rec.items():
+        name = prefix + str(k).lower()
+        out[name] = v
+        if isinstance(v, dict):
+            out.update(_flat(v, name + "."))
+    return out
+
+
 def check_rule(rule: str, results: list[str]) -> tuple[Optional[str], Optional[str]]:
     """(evidence, None) when one record in the results meets every part of the rule;
     (None, reading) with what the data showed when none does; (None, None) when there's no data."""
@@ -185,7 +192,7 @@ def check_rule(rule: str, results: list[str]) -> tuple[Optional[str], Optional[s
     seen = []
     for text in results:
         for rec in _records(text):
-            fields = {str(k).lower(): v for k, v in rec.items()}
+            fields = _flat(rec)
             if not any(f in fields for f, _, _ in conds):
                 continue
             if all(f in fields and _meets(fields[f], op, want) for f, op, want in conds):
@@ -322,6 +329,9 @@ def to_ask(ledger: Ledger, today: date) -> list[Promise]:
             continue
         if p.cadence == "daily" or (p.cadence == "weekdays" and today.weekday() < 5):
             out.append(p)
+        elif _weekly_limit(p):
+            if not _over_this_week(ledger, p, today):
+                out.append(p)
         elif p.cadence == "weekly":
             if ledger.kept_between(p.id, week_start(today), today) < p.per_week:
                 out.append(p)
@@ -496,6 +506,21 @@ def _period(p: Promise, day: date) -> str:
     return f"week of {week_start(day).isoformat()}" if p.cadence == "weekly" else day.isoformat()
 
 
+def _weekly_limit(p: Promise) -> bool:
+    """A weekly promise whose rule is a ceiling ('spent <= 120'): checked every day, and the first
+    day over it is the week's one miss."""
+    if p.cadence != "weekly" or not p.rule:
+        return False
+    try:
+        return all(op in ("<", "<=") for _, op, _ in parse_rule(p.rule))
+    except ValueError:
+        return False
+
+
+def _over_this_week(ledger: Ledger, p: Promise, today: date) -> bool:
+    return bool(ledger.misses(p.id, week_start(today), today))
+
+
 def owed(ledger: Ledger, today: date) -> list[dict]:
     """Consequences the user chose for misses this week that haven't been carried out yet."""
     out = []
@@ -503,7 +528,9 @@ def owed(ledger: Ledger, today: date) -> list[dict]:
     for p in ledger.active(include_finished=True):
         if not p.consequence:
             continue
-        if p.cadence == "weekly":
+        if _weekly_limit(p):
+            periods = [_period(p, today)] if _over_this_week(ledger, p, today) else []
+        elif p.cadence == "weekly":
             periods = [_period(p, today)] if (
                 today.weekday() == 6 and ledger.kept_between(p.id, start, today) < p.per_week) else []
         else:
@@ -591,6 +618,8 @@ def guard(ledger: Ledger, tool_name: str, args: dict, today: date) -> Optional[d
 # --- scores ---------------------------------------------------------------------------------
 
 def line_for(ledger: Ledger, p: Promise, today: date) -> str:
+    if _weekly_limit(p):
+        return "over the limit this week" if _over_this_week(ledger, p, today) else "within the limit so far this week"
     if p.cadence == "weekly":
         done = ledger.kept_between(p.id, week_start(today), today)
         return f"{done} of {p.per_week} this week"
@@ -622,6 +651,10 @@ def weekly_report(ledger: Ledger, today: date) -> str:
             proven_n += ledger.kept_with_receipts(p.id, window[0], today)
             extra = f", {silent} with no answer" if silent else ""
             lines.append(f"- {p.what}: {kept} of {len(window)} days{extra}")
+        elif _weekly_limit(p):
+            over = _over_this_week(ledger, p, today)
+            said_n, did_n = said_n + 1, did_n + (0 if over else 1)
+            lines.append(f"- {p.what}: {'over the limit' if over else 'within the limit'}")
         elif p.cadence == "weekly":
             kept = ledger.kept_between(p.id, start, today)
             said_n, did_n = said_n + p.per_week, did_n + min(kept, p.per_week)
@@ -644,7 +677,8 @@ def weekly_report(ledger: Ledger, today: date) -> str:
             source = ledger.enforced(p.id, period)
             if source:
                 consequences.append(f"{p.what}: {p.consequence}, done ✓ ({_tool_label(source)})")
-            elif p.cadence != "weekly" or (today.weekday() == 6 and
+            elif (_over_this_week(ledger, p, today) if _weekly_limit(p) else
+                  p.cadence != "weekly" or today.weekday() == 6 and
                                            ledger.kept_between(p.id, start, today) < p.per_week):
                 consequences.append(f"{p.what}: {p.consequence}, not enforced yet")
     if consequences:

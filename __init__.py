@@ -338,7 +338,9 @@ TOOLS = [
             "plugin runs on that tool's result, e.g. 'minutes >= 30', 'sport = running and "
             "minutes >= 30', 'message contains fix', or for a list field 'commits >= 1' (a list "
             "counts its items; no len() needed). Use the field names the tool returns, and "
-            "include what must have happened, not just a label.")},
+            "include what must have happened, not just a label. A limit for a week ('eating out under "
+            "$120 a week') is cadence weekly with a rule like 'spent <= 120': checked every day, and "
+            "the first day over it is the week's one miss.")},
         "data_decides": {"type": "boolean", "description": (
             "With rule: true only if the user said to trust the data (e.g. 'the data decides', "
             "'don't ask me'). Then at the check-in, data that fails the rule is a miss without "

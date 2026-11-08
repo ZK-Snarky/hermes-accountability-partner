@@ -572,13 +572,29 @@ def test_without_data_decides_a_failing_reading_is_still_asked(ledger):
     assert "1. Dining budget?" in partner.checkin(ledger, day)
 
 
-def test_a_limit_cant_be_a_weekly_promise(ledger):
-    day = date(2026, 11, 9)
-    msg = "Keep dining under 120 this week"
-    base = {"what": "Dining budget", "user_quote": msg, "proof_tool": "budget", "rule": "spent <= 120"}
-    refused = partner.add(ledger, {**base, "cadence": "weekly"}, msg, day)
-    assert not refused["ok"] and "daily" in refused["error"]
-    assert partner.add(ledger, {**base, "cadence": "daily"}, msg, day)["ok"]
+def test_a_weekly_limit_is_checked_daily_and_owes_once(ledger):
+    mon = date(2026, 11, 9)
+    msg = "Keep eating out under 120 a week, the data decides, if I go over move $50 into savings"
+    pid = partner.add(ledger, {"what": "Eating out", "cadence": "weekly", "user_quote": msg,
+                               "proof_tool": "budget", "rule": "spent <= 120", "data_decides": True,
+                               "consequence": "move $50 into savings"}, msg, mon)["id"]
+    spend = {0: 38, 1: 61, 2: 88, 3: 142, 4: 142, 5: 160}
+    for i, spent in spend.items():
+        day = mon + timedelta(days=i)
+        partner.check_by_fetching(ledger, day, lambda t, a, s=spent: '{"spent": %d}' % s)
+        if i < 3:
+            assert ledger.day_report(pid, day) is True and not partner.owed(ledger, day)
+    thu, sat = mon + timedelta(days=3), mon + timedelta(days=5)
+    assert ledger.misses(pid, mon, sat) == [thu]  # later days over the limit aren't new misses
+    assert [o["for"] for o in partner.owed(ledger, sat)] == ["week of 2026-11-09"]
+    assert "Eating out: over the limit" in partner.weekly_report(ledger, sat)
+    assert ledger.day_report(pid, mon + timedelta(days=7)) is None
+    assert partner.to_ask(ledger, mon + timedelta(days=7))  # a new week starts clean
+
+
+def test_a_rule_reads_nested_fields(ledger):
+    assert partner.check_rule("sleep.hours >= 7", ['{"sleep": {"hours": 7.67}}'])[0] == "sleep.hours 7.67"
+
 
 
 def test_a_plain_claim_the_data_contradicts_isnt_saved_until_the_user_has_seen_it(tmp_path, monkeypatch):
