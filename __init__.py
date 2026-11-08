@@ -46,7 +46,7 @@ def _whoop(args, **_):
 
 def _sleep(args, **_):
     today = _today().isoformat()
-    return json.dumps({"source": "WHOOP", "date": today, "sleep": {"hours": 7.67, "duration": "7h 40m"}})
+    return json.dumps({"source": "WHOOP", "date": today, "hours": 7.67, "duration": "7h 40m"})
 
 
 def _places(args, **_):
