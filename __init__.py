@@ -44,6 +44,11 @@ def _whoop(args, **_):
          "avg_hr": 151}]})
 
 
+def _sleep(args, **_):
+    today = _today().isoformat()
+    return json.dumps({"source": "WHOOP", "date": today, "sleep": {"hours": 7.67, "duration": "7h 40m"}})
+
+
 def _places(args, **_):
     today = _today().isoformat()
     return json.dumps({"source": "Location history", "date": today, "visits": [
@@ -93,6 +98,10 @@ def register(ctx):
     ctx.register_tool(name="whoop_workouts_today", toolset="demo", handler=_whoop,
                       description="list today's workouts from WHOOP.", schema={
         "name": "whoop_workouts_today", "description": "list today's workouts from WHOOP.",
+        "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="whoop_sleep_last_night", toolset="demo", handler=_sleep,
+                      description="last night's sleep from WHOOP.", schema={
+        "name": "whoop_sleep_last_night", "description": "last night's sleep from WHOOP.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
     ctx.register_tool(name="location_visits_today", toolset="demo", handler=_places,
                       description="list today's place visits from location history.", schema={
