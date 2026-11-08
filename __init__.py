@@ -61,6 +61,12 @@ def _monarch(args, **_):
                        "period": "this week", "spent": _DINING_SO_FAR[day.weekday()], "budget": 120})
 
 
+def _transfers(args, **_):
+    day = _today()
+    return json.dumps({"source": "Monarch", "date": day.isoformat(), "account": "Travel fund",
+                       "period": "this week", "moved": 50})
+
+
 def _block(args, **_):
     return json.dumps({"status": "blocked", "app": args.get("app"), "hours": args.get("hours"),
                        "mode": "TEST (nothing blocked)", "id": "test_" + uuid.uuid4().hex[:10]})
@@ -91,6 +97,11 @@ def register(ctx):
                       description="this week's dining-out spending against its budget, from Monarch.", schema={
         "name": "monarch_budget_this_week",
         "description": "this week's dining-out spending against its budget, from Monarch.",
+        "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="monarch_transfers_this_week", toolset="demo", handler=_transfers,
+                      description="money moved into the travel fund this week, from Monarch.", schema={
+        "name": "monarch_transfers_this_week",
+        "description": "money moved into the travel fund this week, from Monarch.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
     ctx.register_tool(name="screentime_app_block", toolset="demo", handler=_block,
                       description="Screen Time app block (stand-in, test mode: nothing is really blocked).", schema={

@@ -7,6 +7,7 @@ provides_tools:
   - whoop_workouts_today
   - location_visits_today
   - monarch_budget_this_week
+  - monarch_transfers_this_week
   - screentime_app_block
   - agent_wallet_send
 provides_hooks:
