@@ -8,6 +8,7 @@ provides_tools:
   - location_visits_today
   - monarch_budget_this_week
   - monarch_transfers_this_week
+  - move_to_savings
   - screentime_app_block
   - agent_wallet_send
 provides_hooks:

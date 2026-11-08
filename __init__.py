@@ -3,7 +3,7 @@ a test-mode Screen Time control, and the agent's test-mode wallet that moves no 
 
 Demo clock: set DEMO_TODAY=YYYY-MM-DD to film a week in minutes. It sets the Accountability
 Partner's today() (its one date source) and the sample commits' date; the real clock, and so the
-lock cool-off, stay real. Unset, everything uses the real date. DEMO_GITHUB_EMPTY=1 films a day with no commits."""
+lock cool-off, stay real. Unset, everything uses the real date. DEMO_GITHUB_EMPTY=1 films a day with no commits; DEMO_GYM_MINUTES sets the gym visit length."""
 
 import json
 import os
@@ -47,7 +47,7 @@ def _whoop(args, **_):
 def _places(args, **_):
     today = _today().isoformat()
     return json.dumps({"source": "Location history", "date": today, "visits": [
-        {"place": "Gym", "arrived": f"{today}T07:10:00", "minutes": 52},
+        {"place": "Gym", "arrived": f"{today}T07:10:00", "minutes": int(os.environ.get("DEMO_GYM_MINUTES", "52"))},
         {"place": "Library", "arrived": f"{today}T13:05:00", "minutes": 72},
         {"place": "Cafe", "arrived": f"{today}T15:20:00", "minutes": 25}]})
 
@@ -65,6 +65,11 @@ def _transfers(args, **_):
     day = _today()
     return json.dumps({"source": "Monarch", "date": day.isoformat(), "account": "Travel fund",
                        "period": "this week", "moved": 50})
+
+
+def _savings(args, **_):
+    return json.dumps({"status": "moved", "amount": args.get("amount"), "to": "Savings",
+                       "mode": "TEST (no money moved)", "id": "test_" + uuid.uuid4().hex[:10]})
 
 
 def _block(args, **_):
@@ -103,6 +108,11 @@ def register(ctx):
         "name": "monarch_transfers_this_week",
         "description": "money moved into the travel fund this week, from Monarch.",
         "parameters": {"type": "object", "properties": {}, "required": []}})
+    ctx.register_tool(name="move_to_savings", toolset="demo", handler=_savings,
+                      description="Move money into savings (stand-in, test mode: no money moves).", schema={
+        "name": "move_to_savings",
+        "description": "Move money into savings (stand-in, test mode: no money moves).",
+        "parameters": {"type": "object", "properties": {"amount": {"type": "number"}}, "required": ["amount"]}})
     ctx.register_tool(name="screentime_app_block", toolset="demo", handler=_block,
                       description="Screen Time app block (stand-in, test mode: nothing is really blocked).", schema={
         "name": "screentime_app_block",
