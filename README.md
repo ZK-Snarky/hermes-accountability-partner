@@ -72,7 +72,8 @@ Dates follow the machine's local time. Set `TZ` for another time zone.
 | `/promises` | Your promises and this week's score, no model call |
 
 A weekly goal's consequence comes due on Sunday, when the week is actually missed, not on the night
-of a single skip. Daily, weekday and one-time promises come due on the night of the miss. The Sunday
+of a single skip. A weekly limit ("eating out under $120 a week") comes due on the first day you go
+over it, once for that week. Daily, weekday and one-time promises come due on the night of the miss. The Sunday
 receipt lists each one as "done ✓" (with the tool that did it) or "not enforced yet".
 
 To mark something kept, the quote must be in the user's message and can't be preceded or carried by
@@ -119,9 +120,14 @@ a "didn't / not / skipped" word. So "I didn't go to the gym" can never be quoted
 ## Develop
 
 ```bash
+git clone https://github.com/ZK-Snarky/hermes-accountability-partner accountability_partner
+cd accountability_partner
 python -m pytest tests
 hermes plugins validate . --install-deps
 ```
+
+The repo root is the plugin package, so the tests need a folder name Python can import (no dashes),
+hence `accountability_partner` above.
 
 MIT licensed.
 
